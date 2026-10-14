@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import StartMap, { type LatLng } from './StartMap'
+import { appleMapsLoopUrl, googleMapsLoopUrl } from './mapsExport'
 
 type Mode = 'walk' | 'run' | 'bike' | 'drive'
 type BikeType = 'regular' | 'electric' | 'road'
 
 type RouteResponse = {
+  mode: Mode
   durationMinutes: number
   distanceMeters: number
   bikeType?: BikeType
+  waypoints: LatLng[]
   geometry: { type: 'LineString'; coordinates: [number, number][] }
   export: {
     googleMapsUrl: string
@@ -108,6 +111,24 @@ export default function App() {
   const bikeLabel =
     route?.bikeType && BIKE_TYPES.find((b) => b.id === route.bikeType)?.label
 
+  const exportLinks = useMemo(() => {
+    if (!route || !start) return null
+    const waypoints =
+      route.waypoints?.length >= 3
+        ? route.waypoints
+        : [
+            start,
+            ...route.geometry.coordinates
+              .filter((_, i, arr) => i > 0 && i < arr.length - 1 && i % Math.ceil(arr.length / 8) === 0)
+              .map(([lng, lat]) => ({ lat, lng })),
+            start,
+          ]
+    return {
+      google: googleMapsLoopUrl(start, waypoints, route.mode ?? mode),
+      apple: appleMapsLoopUrl(start, waypoints, route.mode ?? mode),
+    }
+  }, [route, start, mode])
+
   return (
     <main className="app">
       <h1 className="brand">Sajtsing</h1>
@@ -202,14 +223,18 @@ export default function App() {
           <div className="actions">
             <a
               className="primary"
-              href={route.export.googleMapsUrl}
+              href={exportLinks?.google ?? route.export.googleMapsUrl}
+              target="_blank"
+              rel="noreferrer"
               style={{ textAlign: 'center', textDecoration: 'none' }}
             >
               Öppna i Google Maps
             </a>
             <a
               className="secondary"
-              href={route.export.appleMapsUrl}
+              href={exportLinks?.apple ?? route.export.appleMapsUrl}
+              target="_blank"
+              rel="noreferrer"
               style={{ textAlign: 'center', textDecoration: 'none' }}
             >
               Öppna i Apple Maps

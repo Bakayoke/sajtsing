@@ -159,45 +159,51 @@ function simplifyWaypoints(
   return out
 }
 
+function exportMids(waypoints: { lat: number; lng: number }[]): { lat: number; lng: number }[] {
+  // Drop start/end duplicates; keep up to 8 vias (Google's practical limit)
+  const mids = waypoints.slice(1, -1).slice(0, 8)
+  if (mids.length > 0) return mids
+  // If ORS only echoed start/end, sample interior of the list instead
+  if (waypoints.length <= 2) return []
+  return waypoints.slice(1, -1)
+}
+
+/**
+ * Path-based Google Maps URL — far more reliable for loops than
+ * origin=destination&waypoints=… (mobile often drops the vias).
+ * !3e0 driving · !3e1 bicycling · !3e2 walking
+ */
 function googleMapsUrl(
   start: { lat: number; lng: number },
   waypoints: { lat: number; lng: number }[],
   mode: TravelMode,
 ) {
-  const travelmode =
-    mode === 'drive' ? 'driving' : mode === 'bike' ? 'bicycling' : 'walking'
-  const mids = waypoints.slice(1, -1).slice(0, 8)
-  const params = new URLSearchParams({
-    api: '1',
-    origin: `${start.lat},${start.lng}`,
-    destination: `${start.lat},${start.lng}`,
-    travelmode,
-  })
-  if (mids.length) {
-    params.set('waypoints', mids.map((p) => `${p.lat},${p.lng}`).join('|'))
-  }
-  return `https://www.google.com/maps/dir/?${params.toString()}`
+  const mids = exportMids(waypoints)
+  const modeCode = mode === 'drive' ? '0' : mode === 'bike' ? '1' : '2'
+  const stops = [
+    `${start.lat},${start.lng}`,
+    ...mids.map((p) => `${p.lat},${p.lng}`),
+    `${start.lat},${start.lng}`,
+  ]
+  return `https://www.google.com/maps/dir/${stops.join('/')}/data=!4m2!4m1!3e${modeCode}`
 }
 
+/** Apple Maps: keep `to:` unencoded — URLSearchParams breaks multi-stop. */
 function appleMapsUrl(
   start: { lat: number; lng: number },
   waypoints: { lat: number; lng: number }[],
   mode: TravelMode,
 ) {
   const dirflg = mode === 'drive' ? 'd' : mode === 'bike' ? 'c' : 'w'
-  const mids = waypoints.slice(1, -1)
-  const dest = mids[mids.length - 1] ?? start
-  const via = mids.slice(0, -1)
-  const daddr =
-    via.length > 0
-      ? [...via.map((p) => `${p.lat},${p.lng}`), `${dest.lat},${dest.lng}`].join(' to:')
-      : `${dest.lat},${dest.lng}`
-  const params = new URLSearchParams({
-    saddr: `${start.lat},${start.lng}`,
-    daddr,
-    dirflg,
-  })
-  return `http://maps.apple.com/?${params.toString()}`
+  const mids = exportMids(waypoints)
+  const saddr = `${start.lat},${start.lng}`
+  if (mids.length === 0) {
+    return `https://maps.apple.com/?saddr=${saddr}&daddr=${saddr}&dirflg=${dirflg}`
+  }
+  // Last mid as final daddr hop, then user can navigate back — or chain all + start
+  // Use +to: (no spaces) — spaces in href truncate the URL in browsers
+  const daddr = [...mids.map((p) => `${p.lat},${p.lng}`), saddr].join('+to:')
+  return `https://maps.apple.com/?saddr=${saddr}&daddr=${daddr}&dirflg=${dirflg}`
 }
 
 type OrsFeature = {
@@ -276,11 +282,14 @@ function pickWaypoints(
 ): { lat: number; lng: number }[] {
   const wpIdx = feature.properties?.way_points
   if (wpIdx && wpIdx.length >= 3) {
-    return wpIdx.map((i) => {
+    const fromOrs = wpIdx.map((i) => {
       const [wLng, wLat] = coordinates[Math.min(i, coordinates.length - 1)]!
       return { lat: wLat, lng: wLng }
     })
+    // Need real intermediate stops for Maps export
+    if (fromOrs.length >= 4) return fromOrs
   }
+  // Evenly sample the drawn geometry so export always has shape points
   return simplifyWaypoints(coordinates, 8)
 }
 
