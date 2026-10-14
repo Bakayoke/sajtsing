@@ -6,6 +6,6 @@ client/dist/
 .env
 .env.local
 client/.env
-client/.env.production
+client/.env.local
 *.log
 .DS_Store

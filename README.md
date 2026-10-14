@@ -29,30 +29,27 @@ npm run dev
 
 ### 1. Railway (API)
 
-1. Skapa nytt projekt i Railway → **Deploy from GitHub** → välj `Bakayoke/sajtsing`.
-2. Startkommando: `npm start` (Railway sätter `PORT` automatiskt).
-3. Root directory: repo-roten (inte `client/`).
-4. Lägg in variabler enligt **API-nycklar & Railway-variabler** nedan.
-5. Verifiera: `GET https://DIN-RAILWAY-URL/api/health` → `orsConfigured: true`.
+**URL:** `https://sajtsing-production.up.railway.app`
 
-Valfritt: koppla custom domain `api.sajtsing.com` i Railway.
+1. Tjänst från GitHub `Bakayoke/sajtsing`, start: `npm start` (repo-root).
+2. Variabler enligt **API-nycklar & Railway-variabler** nedan.
+3. Verifiera: [health](https://sajtsing-production.up.railway.app/api/health) → `orsConfigured: true`.
 
 ### 2. Cloudflare (frontend)
 
-1. Sätt API-URL före build, t.ex. i `client/.env.production`:
+`client/.env.production` pekar redan på Railway:
 
 ```bash
-VITE_API_URL=https://DIN-RAILWAY-URL
-# eller https://api.sajtsing.com
+VITE_API_URL=https://sajtsing-production.up.railway.app
 ```
 
-2. Deploy:
+Deploy:
 
 ```bash
 npm run deploy:cf
 ```
 
-3. Koppla `sajtsing.com` / `www` som custom domain på Workern.
+Custom domains `sajtsing.com` / `www` sätts via `routes` i `wrangler.toml`.
 
 ---
 
@@ -76,19 +73,17 @@ Railway → din tjänst → **Variables** → lägg till:
 | Variabel | Obligatorisk | Exempel | Vad den gör |
 |----------|--------------|---------|-------------|
 | `ORS_API_KEY` | **Ja** | `eyJ…` / din ORS-token | Anrop till OpenRouteService (får **inte** ligga i frontend) |
-| `CORS_ORIGIN` | Rekommenderas | `https://sajtsing.com,https://www.sajtsing.com` | Tillåter webbläsaranrop från sajten |
-| `PUBLIC_APP_URL` | Valfri | `https://sajtsing.com` | Bokföring / framtida länkar; påverkar inte routing nu |
+| `CORS_ORIGIN` | Rekommenderas | `https://sajtsing.com,https://www.sajtsing.com` | Tillåter webbläsaranrop från sajten (defaults finns också i koden) |
+| `PUBLIC_APP_URL` | Valfri | `https://sajtsing.com` | Bokföring / framtida länkar |
 | `PORT` | Nej | *(Railway sätter själv)* | Lyssningsport |
 
 Lokalt: samma nycklar i `.env` i repo-roten (filen är gitignored).
 
-### C. Frontend-variabel (Cloudflare-build, inte Railway)
+### C. Frontend → API
 
-| Variabel | Var | Exempel |
-|----------|-----|---------|
-| `VITE_API_URL` | `client/.env.production` (eller CF build env) | `https://sajtsing-production.up.railway.app` |
+Redan satt i `client/.env.production`:
 
-Utan den i prod pekar klienten på samma origin — funkar bara om du reverse-proxar API:t. Med split Cloudflare + Railway **måste** `VITE_API_URL` sättas.
+`VITE_API_URL=https://sajtsing-production.up.railway.app`
 
 ### D. Det du *inte* behöver i v1
 
@@ -99,12 +94,10 @@ Utan den i prod pekar klienten på samma origin — funkar bara om du reverse-pr
 
 ### E. Snabbchecklist
 
-- [ ] ORS-konto + token skapad  
 - [ ] `ORS_API_KEY` satt i Railway  
-- [ ] `CORS_ORIGIN` inkluderar `https://sajtsing.com`  
-- [ ] `/api/health` visar `orsConfigured: true`  
-- [ ] `VITE_API_URL` pekar på Railway före `npm run deploy:cf`  
-- [ ] Domän `sajtsing.com` pekar på Cloudflare-workern  
+- [ ] [Health](https://sajtsing-production.up.railway.app/api/health) → `orsConfigured: true`  
+- [ ] `npm run deploy:cf` efter ändringar i klienten  
+- [ ] Domän `sajtsing.com` på Cloudflare-workern  
 
 ## API
 

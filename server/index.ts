@@ -9,6 +9,7 @@ const defaultOrigins = [
   'http://127.0.0.1:5173',
   'https://sajtsing.com',
   'https://www.sajtsing.com',
+  'https://sajtsing.linus-stenvi.workers.dev',
 ]
 
 const corsOrigins = (process.env.CORS_ORIGIN ?? '')
