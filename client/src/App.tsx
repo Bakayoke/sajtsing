@@ -31,11 +31,9 @@ const BIKE_TYPES: { id: BikeType; label: string; hint: string }[] = [
   { id: 'road', label: 'Landsväg', hint: '~28 km/h' },
 ]
 
-const apiBase = import.meta.env.VITE_API_URL ?? ''
+const TIME_PRESETS = [15, 30, 45, 60, 90]
 
-function formatCoords(p: LatLng) {
-  return `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`
-}
+const apiBase = import.meta.env.VITE_API_URL ?? ''
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('walk')
@@ -107,7 +105,7 @@ export default function App() {
     }
   }
 
-  const km = route ? (route.distanceMeters / 1000).toFixed(1) : null
+  const km = route ? (route.distanceMeters / 1000).toFixed(1).replace('.', ',') : null
   const bikeLabel =
     route?.bikeType && BIKE_TYPES.find((b) => b.id === route.bikeType)?.label
 
@@ -131,39 +129,48 @@ export default function App() {
 
   return (
     <main className="app">
-      <h1 className="brand">Sajtsing</h1>
-      <p className="tagline">En rutt för den tid du har.</p>
+      <header className="hero">
+        <h1 className="brand">Sajtsing</h1>
+        <p className="tagline">En rutt för den tid du har.</p>
+      </header>
 
       {!route ? (
         <section className="panel">
           <div className="start-block">
-            <div className="start-header">
-              <label>Startpunkt</label>
+            <div className="field-label">
+              <span>Startpunkt</span>
               <button type="button" className="linkish" onClick={useMyLocation} disabled={locating}>
-                {locating ? 'Hämtar plats…' : 'Min plats'}
+                {locating ? 'Hämtar…' : 'Min plats'}
               </button>
             </div>
-            <StartMap start={start} onPick={setStart} />
+            <div className="map-shell">
+              <StartMap start={start} onPick={setStart} />
+            </div>
             <p className="hint">
               {start
-                ? `Start: ${formatCoords(start)} — dra pinnen eller tryck på kartan för att byta.`
+                ? 'Dra pinnen eller tryck på kartan för att byta start.'
                 : 'Tryck på kartan för att välja start, eller tillåt plats.'}
             </p>
           </div>
 
-          <label>
-            Tid (minuter)
-            <input
-              type="number"
-              min={10}
-              max={180}
-              value={minutes}
-              onChange={(e) => setMinutes(Number(e.target.value))}
-            />
-          </label>
+          <div className="field">
+            <span className="field-label">Tid</span>
+            <div className="time-row">
+              {TIME_PRESETS.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={minutes === t ? 'active' : ''}
+                  onClick={() => setMinutes(t)}
+                >
+                  {t} min
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <div>
-            <label style={{ marginBottom: '0.4rem' }}>Färdsätt</label>
+          <div className="field">
+            <span className="field-label">Färdsätt</span>
             <div className="modes">
               {MODES.map((m) => (
                 <button
@@ -179,8 +186,8 @@ export default function App() {
           </div>
 
           {mode === 'bike' && (
-            <div>
-              <label style={{ marginBottom: '0.4rem' }}>Cykeltyp</label>
+            <div className="field">
+              <span className="field-label">Cykeltyp</span>
               <div className="modes bike-types">
                 {BIKE_TYPES.map((b) => (
                   <button
@@ -194,7 +201,7 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <p className="hint">Påverkar längd och cykelväg-preferens.</p>
+              <p className="hint">Påverkar längd och vägval.</p>
             </div>
           )}
 
@@ -210,23 +217,37 @@ export default function App() {
           </button>
         </section>
       ) : (
-        <section className="panel">
-          <StartMap
-            start={start}
-            routeCoords={route.geometry.coordinates}
-            interactive={false}
-          />
-          <p className="result-meta">
-            Ca {route.durationMinutes} min · {km} km
-            {bikeLabel ? ` · ${bikeLabel}` : ''} · runda tillbaka till start
+        <section className="panel result">
+          <div className="map-shell">
+            <StartMap
+              start={start}
+              routeCoords={route.geometry.coordinates}
+              interactive={false}
+            />
+          </div>
+
+          <div className="result-stats">
+            <div className="stat">
+              <div className="stat-value">{route.durationMinutes}</div>
+              <div className="stat-label">Minuter</div>
+            </div>
+            <div className="stat">
+              <div className="stat-value">{km}</div>
+              <div className="stat-label">Kilometer</div>
+            </div>
+          </div>
+
+          <p className="result-note">
+            Runda tillbaka till start
+            {bikeLabel ? ` · ${bikeLabel}` : ''}
           </p>
+
           <div className="actions">
             <a
               className="primary"
               href={exportLinks?.google ?? route.export.googleMapsUrl}
               target="_blank"
               rel="noreferrer"
-              style={{ textAlign: 'center', textDecoration: 'none' }}
             >
               Öppna i Google Maps
             </a>
@@ -235,7 +256,6 @@ export default function App() {
               href={exportLinks?.apple ?? route.export.appleMapsUrl}
               target="_blank"
               rel="noreferrer"
-              style={{ textAlign: 'center', textDecoration: 'none' }}
             >
               Öppna i Apple Maps
             </a>
