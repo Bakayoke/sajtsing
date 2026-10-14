@@ -22,6 +22,9 @@ const ORS_PROFILE: Record<TravelMode, string> = {
   drive: 'driving-car',
 }
 
+/** More points → more circular loops (ORS round_trip). */
+const ROUND_TRIP_POINTS = 5
+
 function assertInput(body: CreateRouteInput) {
   const lat = body.start?.lat
   const lng = body.start?.lng
@@ -29,6 +32,9 @@ function assertInput(body: CreateRouteInput) {
   const mode = body.mode
 
   if (typeof lat !== 'number' || typeof lng !== 'number' || Number.isNaN(lat) || Number.isNaN(lng)) {
+    throw new Error('Invalid start coordinates')
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     throw new Error('Invalid start coordinates')
   }
   if (typeof durationMinutes !== 'number' || durationMinutes < 10 || durationMinutes > 180) {
@@ -41,27 +47,17 @@ function assertInput(body: CreateRouteInput) {
   return { lat, lng, durationMinutes, mode }
 }
 
-/** Pick a destination ~half the budget away, then ask ORS for a round trip via that point. */
-function pickViaPoint(lat: number, lng: number, halfDistanceM: number, seed?: string) {
-  const angle =
-    seed && seed.length > 0
-      ? ([...seed].reduce((a, c) => a + c.charCodeAt(0), 0) % 360) * (Math.PI / 180)
-      : Math.random() * Math.PI * 2
-
-  const earthR = 6371000
-  const dLat = (halfDistanceM * Math.cos(angle)) / earthR
-  const dLng = (halfDistanceM * Math.sin(angle)) / (earthR * Math.cos((lat * Math.PI) / 180))
-
-  return {
-    lat: lat + (dLat * 180) / Math.PI,
-    lng: lng + (dLng * 180) / Math.PI,
-  }
+function seedToInt(seed?: string): number {
+  if (!seed) return Math.floor(Math.random() * 100_000)
+  const n = [...seed].reduce((a, c) => a + c.charCodeAt(0), 0)
+  return (n % 90_000) + 1
 }
 
 function simplifyWaypoints(
   coords: [number, number][],
   maxPoints = 8,
 ): { lat: number; lng: number }[] {
+  if (coords.length === 0) return []
   if (coords.length <= maxPoints) {
     return coords.map(([lng, lat]) => ({ lat, lng }))
   }
@@ -81,7 +77,7 @@ function googleMapsUrl(
 ) {
   const travelmode =
     mode === 'drive' ? 'driving' : mode === 'bike' ? 'bicycling' : 'walking'
-  // Drop first/last if they equal start — Maps uses origin + destination (= start for loop)
+  // Intermediate stops only — origin/destination are the start (closed loop)
   const mids = waypoints.slice(1, -1).slice(0, 8)
   const params = new URLSearchParams({
     api: '1',
@@ -101,11 +97,17 @@ function appleMapsUrl(
   mode: TravelMode,
 ) {
   const dirflg = mode === 'drive' ? 'd' : mode === 'bike' ? 'c' : 'w'
-  // Apple Maps URL scheme is limited; send last interesting mid as daddr when possible
-  const mid = waypoints[Math.floor(waypoints.length / 2)] ?? start
+  // Apple Maps URL scheme is limited; chain midpoints as daddr hops when possible
+  const mids = waypoints.slice(1, -1)
+  const dest = mids[mids.length - 1] ?? start
+  const via = mids.slice(0, -1)
+  const daddr =
+    via.length > 0
+      ? [...via.map((p) => `${p.lat},${p.lng}`), `${dest.lat},${dest.lng}`].join(' to:')
+      : `${dest.lat},${dest.lng}`
   const params = new URLSearchParams({
     saddr: `${start.lat},${start.lng}`,
-    daddr: `${mid.lat},${mid.lng}`,
+    daddr,
     dirflg,
   })
   return `http://maps.apple.com/?${params.toString()}`
@@ -118,9 +120,9 @@ export async function createRoute(body: CreateRouteInput) {
     throw new Error('ORS_API_KEY is not configured')
   }
 
-  const totalDistanceM = SPEED_MS[mode] * durationMinutes * 60
-  const via = pickViaPoint(lat, lng, totalDistanceM / 2, body.seed)
+  const totalDistanceM = Math.round(SPEED_MS[mode] * durationMinutes * 60)
   const profile = ORS_PROFILE[mode]
+  const seed = seedToInt(body.seed)
 
   const url = `https://api.openrouteservice.org/v2/directions/${profile}/geojson`
   const res = await fetch(url, {
@@ -130,12 +132,15 @@ export async function createRoute(body: CreateRouteInput) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      coordinates: [
-        [lng, lat],
-        [via.lng, via.lat],
-        [lng, lat],
-      ],
+      coordinates: [[lng, lat]],
       instructions: false,
+      options: {
+        round_trip: {
+          length: totalDistanceM,
+          points: ROUND_TRIP_POINTS,
+          seed,
+        },
+      },
     }),
   })
 
@@ -147,7 +152,10 @@ export async function createRoute(body: CreateRouteInput) {
   const geojson = (await res.json()) as {
     features?: Array<{
       geometry?: { coordinates?: [number, number][] }
-      properties?: { summary?: { distance?: number; duration?: number } }
+      properties?: {
+        summary?: { distance?: number; duration?: number }
+        way_points?: number[]
+      }
     }>
   }
 
@@ -159,7 +167,19 @@ export async function createRoute(body: CreateRouteInput) {
 
   const distanceMeters = feature?.properties?.summary?.distance ?? totalDistanceM
   const durationSec = feature?.properties?.summary?.duration ?? durationMinutes * 60
-  const waypoints = simplifyWaypoints(coordinates)
+
+  // Prefer ORS waypoint indices (the generated round-trip corners) for Maps export
+  const wpIdx = feature?.properties?.way_points
+  let waypoints: { lat: number; lng: number }[]
+  if (wpIdx && wpIdx.length >= 2) {
+    waypoints = wpIdx.map((i) => {
+      const [wLng, wLat] = coordinates[Math.min(i, coordinates.length - 1)]!
+      return { lat: wLat, lng: wLng }
+    })
+  } else {
+    waypoints = simplifyWaypoints(coordinates)
+  }
+
   const start = { lat, lng }
 
   return {

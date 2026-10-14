@@ -143,3 +143,71 @@ input[type='number'] {
   display: grid;
   gap: 0.6rem;
 }
+
+.start-block {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.start-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.start-header label {
+  margin: 0;
+}
+
+.linkish {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.linkish:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.start-map {
+  height: 220px;
+  width: 100%;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(26, 46, 34, 0.12);
+  background: #c5d5c9;
+  z-index: 0;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.start-pin {
+  background: transparent;
+  border: none;
+}
+
+.start-pin-dot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(26, 46, 34, 0.35);
+}
