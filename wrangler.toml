@@ -1,0 +1,10 @@
+name = "sajtsing"
+compatibility_date = "2025-04-01"
+
+# Static frontend (built client). API stays on Railway.
+[assets]
+directory = "./client/dist"
+not_found_handling = "single-page-application"
+
+# After first deploy, attach custom domains in Cloudflare:
+# sajtsing.com / www.sajtsing.com

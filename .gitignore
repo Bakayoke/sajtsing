@@ -1,0 +1,11 @@
+node_modules/
+dist/
+client/dist/
+.wrangler/
+.dev.vars
+.env
+.env.local
+client/.env
+client/.env.production
+*.log
+.DS_Store

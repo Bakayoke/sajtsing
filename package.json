@@ -1,0 +1,28 @@
+{
+  "name": "sajtsing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sajtsing — en rutt för den tid du har",
+  "scripts": {
+    "dev": "concurrently -n server,client -c coral,cyan \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm install --prefix client && npm run build --prefix client",
+    "start": "NODE_ENV=production tsx server/index.ts",
+    "deploy:cf": "npm run build && npx wrangler deploy"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.0",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.14.0"
+  }
+}
