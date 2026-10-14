@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import StartMap, { type LatLng } from './StartMap'
 
 type Mode = 'walk' | 'run' | 'bike' | 'drive'
+type BikeType = 'regular' | 'electric' | 'road'
 
 type RouteResponse = {
   durationMinutes: number
   distanceMeters: number
+  bikeType?: BikeType
   geometry: { type: 'LineString'; coordinates: [number, number][] }
   export: {
     googleMapsUrl: string
@@ -20,6 +22,12 @@ const MODES: { id: Mode; label: string }[] = [
   { id: 'drive', label: 'Bil' },
 ]
 
+const BIKE_TYPES: { id: BikeType; label: string; hint: string }[] = [
+  { id: 'regular', label: 'Vanlig', hint: '~16 km/h' },
+  { id: 'electric', label: 'El', hint: '~22 km/h' },
+  { id: 'road', label: 'Landsväg', hint: '~28 km/h' },
+]
+
 const apiBase = import.meta.env.VITE_API_URL ?? ''
 
 function formatCoords(p: LatLng) {
@@ -28,6 +36,7 @@ function formatCoords(p: LatLng) {
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('walk')
+  const [bikeType, setBikeType] = useState<BikeType>('regular')
   const [minutes, setMinutes] = useState(45)
   const [start, setStart] = useState<LatLng | null>(null)
   const [locating, setLocating] = useState(true)
@@ -78,6 +87,7 @@ export default function App() {
           start,
           durationMinutes: minutes,
           mode,
+          bikeType: mode === 'bike' ? bikeType : undefined,
           seed: regenerate ? `${Date.now()}` : undefined,
         }),
       })
@@ -95,6 +105,8 @@ export default function App() {
   }
 
   const km = route ? (route.distanceMeters / 1000).toFixed(1) : null
+  const bikeLabel =
+    route?.bikeType && BIKE_TYPES.find((b) => b.id === route.bikeType)?.label
 
   return (
     <main className="app">
@@ -145,6 +157,26 @@ export default function App() {
             </div>
           </div>
 
+          {mode === 'bike' && (
+            <div>
+              <label style={{ marginBottom: '0.4rem' }}>Cykeltyp</label>
+              <div className="modes bike-types">
+                {BIKE_TYPES.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={bikeType === b.id ? 'active' : ''}
+                    onClick={() => setBikeType(b.id)}
+                    title={b.hint}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">Påverkar längd och cykelväg-preferens.</p>
+            </div>
+          )}
+
           {error && <p className="error">{error}</p>}
 
           <button
@@ -164,7 +196,8 @@ export default function App() {
             interactive={false}
           />
           <p className="result-meta">
-            Ca {route.durationMinutes} min · {km} km · runda tillbaka till start
+            Ca {route.durationMinutes} min · {km} km
+            {bikeLabel ? ` · ${bikeLabel}` : ''} · runda tillbaka till start
           </p>
           <div className="actions">
             <a

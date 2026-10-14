@@ -86,6 +86,10 @@ input[type='number'] {
   gap: 0.4rem;
 }
 
+.modes.bike-types {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .modes button {
   font: inherit;
   padding: 0.55rem 0.2rem;
