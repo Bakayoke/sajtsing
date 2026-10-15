@@ -155,7 +155,9 @@ export default function App() {
   return (
     <main className="app">
       <header className="hero">
-        <h1 className="brand">Sajtsing</h1>
+        <h1 className="brand">
+          <span>Sajtsing</span>
+        </h1>
         <p className="tagline">En rutt för den tid du har.</p>
       </header>
 
@@ -309,7 +311,7 @@ export default function App() {
               end={route.kind === 'to' || tripKind === 'to' ? end ?? route.end : null}
               routeCoords={route.geometry.coordinates}
               interactive={false}
-              routeColor="#2a5c45"
+              routeColor="#ff5a1f"
             />
           </div>
 

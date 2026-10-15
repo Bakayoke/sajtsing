@@ -38,7 +38,7 @@ export default function StartMap({
   onPickEnd,
   routeCoords,
   interactive = true,
-  routeColor = '#2a5c45',
+  routeColor = '#ff5a1f',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
