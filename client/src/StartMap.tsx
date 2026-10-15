@@ -27,7 +27,8 @@ type Props = {
 }
 
 const STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/liberty'
-const STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark'
+/** Fiord is a softer dark blue-gray — more readable than pitch-black "dark". */
+const STYLE_DARK = 'https://tiles.openfreemap.org/styles/fiord'
 
 function prefersDark() {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
