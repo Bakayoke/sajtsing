@@ -66,8 +66,8 @@
     --pop-soft: rgba(255, 106, 53, 0.18);
     --pop-ink: #1a0c06;
     --charcoal: #f3f1ec;
-    /* Light pin on dark Carto basemap */
-    --pin-start: #f3f1ec;
+    /* Dark pin — OSM stays light; dark look via CSS filter on tiles only */
+    --pin-start: #111113;
     --mode-active-bg: #ff6a35;
     --mode-active-ink: #1a0c06;
     --trip-active-bg: #f3f1ec;
@@ -414,6 +414,19 @@ body::after {
   height: var(--map-h);
   width: 100%;
   z-index: 0;
+}
+
+/* Dark theme without paid tiles: invert OSM, then un-invert markers/route */
+@media (prefers-color-scheme: dark) {
+  .start-map .leaflet-tile-pane {
+    filter: invert(0.92) hue-rotate(180deg) brightness(0.95) contrast(0.92);
+  }
+
+  .start-map .leaflet-overlay-pane,
+  .start-map .leaflet-marker-pane,
+  .start-map .leaflet-shadow-pane {
+    filter: invert(0.92) hue-rotate(180deg) brightness(1.05);
+  }
 }
 
 .panel.result .start-map {

@@ -30,20 +30,6 @@ const endIcon = L.divIcon({
   iconAnchor: [12, 12],
 })
 
-const LIGHT_TILES = {
-  url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  attribution: '&copy; OpenStreetMap',
-}
-
-const DARK_TILES = {
-  url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  attribution: '&copy; OpenStreetMap, &copy; CARTO',
-}
-
-function prefersDark() {
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
-}
-
 export default function StartMap({
   start,
   end = null,
@@ -56,7 +42,6 @@ export default function StartMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
-  const tilesRef = useRef<L.TileLayer | null>(null)
   const startMarkerRef = useRef<L.Marker | null>(null)
   const endMarkerRef = useRef<L.Marker | null>(null)
   const routeRef = useRef<L.Polyline | null>(null)
@@ -77,9 +62,9 @@ export default function StartMap({
 
     L.control.zoom({ position: 'topright' }).addTo(map)
 
-    const initial = prefersDark() ? DARK_TILES : LIGHT_TILES
-    tilesRef.current = L.tileLayer(initial.url, {
-      attribution: initial.attribution,
+    // Free OSM tiles — no API key. Dark look is handled via CSS filter.
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
       maxZoom: 19,
     }).addTo(map)
 
@@ -94,28 +79,10 @@ export default function StartMap({
     return () => {
       map.remove()
       mapRef.current = null
-      tilesRef.current = null
       startMarkerRef.current = null
       endMarkerRef.current = null
       routeRef.current = null
     }
-  }, [])
-
-  // Swap basemap when OS theme changes
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const apply = () => {
-      const map = mapRef.current
-      if (!map) return
-      const next = mq.matches ? DARK_TILES : LIGHT_TILES
-      if (tilesRef.current) map.removeLayer(tilesRef.current)
-      tilesRef.current = L.tileLayer(next.url, {
-        attribution: next.attribution,
-        maxZoom: 19,
-      }).addTo(map)
-    }
-    mq.addEventListener('change', apply)
-    return () => mq.removeEventListener('change', apply)
   }, [])
 
   useEffect(() => {
