@@ -24,6 +24,9 @@
   --pop-soft: rgba(255, 90, 31, 0.14);
   --pop-ink: #fff7f2;
   --charcoal: #1a1a1f;
+  --pin-start: #111113;
+  --mode-active-bg: #1a1a1f;
+  --mode-active-ink: #f7f5f2;
   --trip-active-bg: #1a1a1f;
   --trip-active-ink: #f7f5f2;
   --danger: #c0392b;
@@ -63,6 +66,10 @@
     --pop-soft: rgba(255, 106, 53, 0.18);
     --pop-ink: #1a0c06;
     --charcoal: #f3f1ec;
+    /* Light pin on dark Carto basemap */
+    --pin-start: #f3f1ec;
+    --mode-active-bg: #ff6a35;
+    --mode-active-ink: #1a0c06;
     --trip-active-bg: #f3f1ec;
     --trip-active-ink: #121214;
     --danger: #ff6b6b;
@@ -276,9 +283,9 @@ body::after {
 }
 
 .modes button.active {
-  background: var(--surface-solid);
-  color: var(--ink);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  background: var(--mode-active-bg);
+  color: var(--mode-active-ink);
+  box-shadow: none;
 }
 
 .modes.trip-kinds button.active {
@@ -475,16 +482,18 @@ body::after {
 
 .map-pin-dot {
   display: block;
-  width: 16px;
-  height: 16px;
-  margin: 3px;
+  width: 18px;
+  height: 18px;
+  margin: 2px;
   border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  border: 2.5px solid #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
 .start-pin-dot {
-  background: var(--charcoal);
+  background: var(--pin-start);
 }
 
 .end-pin-dot {
