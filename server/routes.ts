@@ -3,6 +3,8 @@ export type BikeType = 'regular' | 'electric' | 'road'
 
 export type CreateRouteInput = {
   start?: { lat?: number; lng?: number }
+  /** If set, build A→B taking ~durationMinutes (with scenic detours if needed). */
+  end?: { lat?: number; lng?: number }
   durationMinutes?: number
   mode?: TravelMode
   bikeType?: BikeType
@@ -34,32 +36,50 @@ const ORS_PROFILE: Record<Exclude<TravelMode, 'bike'>, string> = {
   drive: 'driving-car',
 }
 
-/** Via-points on the circle (excluding start/end). More → rounder loops. */
 const CIRCLE_VIA_POINTS = 6
 const MAX_ROUTE_ATTEMPTS = 3
 
+type LatLng = { lat: number; lng: number }
+
+function assertCoord(label: string, point?: { lat?: number; lng?: number }): LatLng {
+  const lat = point?.lat
+  const lng = point?.lng
+  if (typeof lat !== 'number' || typeof lng !== 'number' || Number.isNaN(lat) || Number.isNaN(lng)) {
+    throw new Error(`Invalid ${label} coordinates`)
+  }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    throw new Error(`Invalid ${label} coordinates`)
+  }
+  return { lat, lng }
+}
+
 function assertInput(body: CreateRouteInput) {
-  const lat = body.start?.lat
-  const lng = body.start?.lng
+  const start = assertCoord('start', body.start)
+  const end =
+    body.end &&
+    typeof body.end.lat === 'number' &&
+    typeof body.end.lng === 'number' &&
+    !Number.isNaN(body.end.lat) &&
+    !Number.isNaN(body.end.lng)
+      ? assertCoord('end', body.end)
+      : null
+
   const durationMinutes = body.durationMinutes
   const mode = body.mode
   const bikeType: BikeType =
     body.bikeType === 'electric' || body.bikeType === 'road' ? body.bikeType : 'regular'
 
-  if (typeof lat !== 'number' || typeof lng !== 'number' || Number.isNaN(lat) || Number.isNaN(lng)) {
-    throw new Error('Invalid start coordinates')
-  }
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-    throw new Error('Invalid start coordinates')
-  }
   if (typeof durationMinutes !== 'number' || durationMinutes < 10 || durationMinutes > 180) {
     throw new Error('Invalid durationMinutes (10–180)')
   }
   if (!mode || !(mode in SPEED_MS)) {
     throw new Error('Invalid mode')
   }
+  if (end && haversineM(start, end) < 40) {
+    throw new Error('Mål måste skilja sig från start')
+  }
 
-  return { lat, lng, durationMinutes, mode, bikeType }
+  return { start, end, durationMinutes, mode, bikeType }
 }
 
 function seedToInt(seed?: string): number {
@@ -76,19 +96,38 @@ function profileFor(mode: TravelMode, bikeType: BikeType): string {
   return mode === 'bike' ? BIKE_PROFILE[bikeType] : ORS_PROFILE[mode]
 }
 
-/** Destination given distance (m) and bearing (rad) from a point. */
-function destinationPoint(lat: number, lng: number, distanceM: number, bearingRad: number) {
+function haversineM(a: LatLng, b: LatLng): number {
+  const R = 6371000
+  const φ1 = (a.lat * Math.PI) / 180
+  const φ2 = (b.lat * Math.PI) / 180
+  const Δφ = ((b.lat - a.lat) * Math.PI) / 180
+  const Δλ = ((b.lng - a.lng) * Math.PI) / 180
+  const s =
+    Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)))
+}
+
+function bearingRad(a: LatLng, b: LatLng): number {
+  const φ1 = (a.lat * Math.PI) / 180
+  const φ2 = (b.lat * Math.PI) / 180
+  const Δλ = ((b.lng - a.lng) * Math.PI) / 180
+  const y = Math.sin(Δλ) * Math.cos(φ2)
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ)
+  return Math.atan2(y, x)
+}
+
+function destinationPoint(lat: number, lng: number, distanceM: number, bearing: number) {
   const R = 6371000
   const δ = distanceM / R
   const φ1 = (lat * Math.PI) / 180
   const λ1 = (lng * Math.PI) / 180
   const φ2 = Math.asin(
-    Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(bearingRad),
+    Math.sin(φ1) * Math.cos(δ) + Math.cos(φ1) * Math.sin(δ) * Math.cos(bearing),
   )
   const λ2 =
     λ1 +
     Math.atan2(
-      Math.sin(bearingRad) * Math.sin(δ) * Math.cos(φ1),
+      Math.sin(bearing) * Math.sin(δ) * Math.cos(φ1),
       Math.cos(δ) - Math.sin(φ1) * Math.sin(φ2),
     )
   return {
@@ -97,10 +136,6 @@ function destinationPoint(lat: number, lng: number, distanceM: number, bearingRa
   }
 }
 
-/**
- * Build ORS coordinates for a loop: start sits on a circle; vias are spaced around it.
- * Radius is slightly under circumference/(2π) so road distance ≈ target length.
- */
 function circularLoopCoordinates(
   lat: number,
   lng: number,
@@ -110,10 +145,9 @@ function circularLoopCoordinates(
 ): [number, number][] {
   const radius = (lengthM * 0.8) / (2 * Math.PI)
   const orient = ((seed % 360) * Math.PI) / 180
-  // Center is `radius` inward from start
   const center = destinationPoint(lat, lng, radius, orient + Math.PI)
   const startAngle = orient
-  const totalPoints = viaCount + 1 // include start as first ring point
+  const totalPoints = viaCount + 1
   const coords: [number, number][] = [[lng, lat]]
 
   for (let i = 1; i < totalPoints; i++) {
@@ -122,6 +156,37 @@ function circularLoopCoordinates(
     coords.push([p.lng, p.lat])
   }
   coords.push([lng, lat])
+  return coords
+}
+
+/** Scenic A→B: vias bulge off the direct line so road distance ≈ targetLengthM. */
+function detourCoordinates(
+  start: LatLng,
+  end: LatLng,
+  targetLengthM: number,
+  seed: number,
+  amplitudeScale = 1,
+): [number, number][] {
+  const direct = haversineM(start, end)
+  const bearing = bearingRad(start, end)
+  const side = seed % 2 === 0 ? 1 : -1
+  const perp = bearing + (Math.PI / 2) * side
+  const extra = Math.max(0, targetLengthM - direct * 1.2)
+  let amp = Math.min(extra * 0.42, direct * 0.9, targetLengthM * 0.28) * amplitudeScale
+  if (targetLengthM > direct * 1.15) {
+    amp = Math.max(amp, Math.min(direct * 0.25, 400))
+  }
+
+  const viaCount = amp > 600 ? 5 : 4
+  const coords: [number, number][] = [[start.lng, start.lat]]
+  for (let i = 1; i <= viaCount; i++) {
+    const t = i / (viaCount + 1)
+    const along = destinationPoint(start.lat, start.lng, direct * t, bearing)
+    const bulge = Math.sin(t * Math.PI) * amp
+    const p = destinationPoint(along.lat, along.lng, bulge, perp)
+    coords.push([p.lng, p.lat])
+  }
+  coords.push([end.lng, end.lat])
   return coords
 }
 
@@ -145,13 +210,13 @@ function bboxAspect(coords: [number, number][]): number {
 function simplifyWaypoints(
   coords: [number, number][],
   maxPoints = 8,
-): { lat: number; lng: number }[] {
+): LatLng[] {
   if (coords.length === 0) return []
   if (coords.length <= maxPoints) {
     return coords.map(([lng, lat]) => ({ lat, lng }))
   }
   const step = (coords.length - 1) / (maxPoints - 1)
-  const out: { lat: number; lng: number }[] = []
+  const out: LatLng[] = []
   for (let i = 0; i < maxPoints; i++) {
     const [lng, lat] = coords[Math.round(i * step)]!
     out.push({ lat, lng })
@@ -159,50 +224,29 @@ function simplifyWaypoints(
   return out
 }
 
-function exportMids(waypoints: { lat: number; lng: number }[]): { lat: number; lng: number }[] {
-  // Drop start/end duplicates; keep up to 8 vias (Google's practical limit)
+function exportMids(waypoints: LatLng[]): LatLng[] {
   const mids = waypoints.slice(1, -1).slice(0, 8)
   if (mids.length > 0) return mids
-  // If ORS only echoed start/end, sample interior of the list instead
   if (waypoints.length <= 2) return []
   return waypoints.slice(1, -1)
 }
 
-/**
- * Path-based Google Maps URL — far more reliable for loops than
- * origin=destination&waypoints=… (mobile often drops the vias).
- * !3e0 driving · !3e1 bicycling · !3e2 walking
- */
-function googleMapsUrl(
-  start: { lat: number; lng: number },
-  waypoints: { lat: number; lng: number }[],
-  mode: TravelMode,
-) {
+function googleMapsUrl(start: LatLng, end: LatLng, waypoints: LatLng[], mode: TravelMode) {
   const mids = exportMids(waypoints)
   const modeCode = mode === 'drive' ? '0' : mode === 'bike' ? '1' : '2'
   const stops = [
     `${start.lat},${start.lng}`,
     ...mids.map((p) => `${p.lat},${p.lng}`),
-    `${start.lat},${start.lng}`,
+    `${end.lat},${end.lng}`,
   ]
   return `https://www.google.com/maps/dir/${stops.join('/')}/data=!4m2!4m1!3e${modeCode}`
 }
 
-/** Apple Maps: keep `to:` unencoded — URLSearchParams breaks multi-stop. */
-function appleMapsUrl(
-  start: { lat: number; lng: number },
-  waypoints: { lat: number; lng: number }[],
-  mode: TravelMode,
-) {
+function appleMapsUrl(start: LatLng, end: LatLng, waypoints: LatLng[], mode: TravelMode) {
   const dirflg = mode === 'drive' ? 'd' : mode === 'bike' ? 'c' : 'w'
   const mids = exportMids(waypoints)
   const saddr = `${start.lat},${start.lng}`
-  if (mids.length === 0) {
-    return `https://maps.apple.com/?saddr=${saddr}&daddr=${saddr}&dirflg=${dirflg}`
-  }
-  // Last mid as final daddr hop, then user can navigate back — or chain all + start
-  // Use +to: (no spaces) — spaces in href truncate the URL in browsers
-  const daddr = [...mids.map((p) => `${p.lat},${p.lng}`), saddr].join('+to:')
+  const daddr = [...mids.map((p) => `${p.lat},${p.lng}`), `${end.lat},${end.lng}`].join('+to:')
   return `https://maps.apple.com/?saddr=${saddr}&daddr=${daddr}&dirflg=${dirflg}`
 }
 
@@ -248,9 +292,8 @@ async function routeCircularLoop(
   lengthM: number,
   seed: number,
 ): Promise<OrsFeature> {
-  const coordinates = circularLoopCoordinates(lat, lng, lengthM, seed)
   return orsDirections(apiKey, profile, {
-    coordinates,
+    coordinates: circularLoopCoordinates(lat, lng, lengthM, seed),
     instructions: false,
   })
 }
@@ -276,34 +319,60 @@ async function routeOrsRoundTrip(
   })
 }
 
-function pickWaypoints(
-  feature: OrsFeature,
-  coordinates: [number, number][],
-): { lat: number; lng: number }[] {
+async function routeDirect(
+  apiKey: string,
+  profile: string,
+  start: LatLng,
+  end: LatLng,
+): Promise<OrsFeature> {
+  return orsDirections(apiKey, profile, {
+    coordinates: [
+      [start.lng, start.lat],
+      [end.lng, end.lat],
+    ],
+    instructions: false,
+  })
+}
+
+async function routeDetour(
+  apiKey: string,
+  profile: string,
+  start: LatLng,
+  end: LatLng,
+  targetLengthM: number,
+  seed: number,
+  amplitudeScale: number,
+): Promise<OrsFeature> {
+  return orsDirections(apiKey, profile, {
+    coordinates: detourCoordinates(start, end, targetLengthM, seed, amplitudeScale),
+    instructions: false,
+  })
+}
+
+function pickWaypoints(feature: OrsFeature, coordinates: [number, number][]): LatLng[] {
   const wpIdx = feature.properties?.way_points
   if (wpIdx && wpIdx.length >= 3) {
     const fromOrs = wpIdx.map((i) => {
       const [wLng, wLat] = coordinates[Math.min(i, coordinates.length - 1)]!
       return { lat: wLat, lng: wLng }
     })
-    // Need real intermediate stops for Maps export
-    if (fromOrs.length >= 4) return fromOrs
+    if (fromOrs.length >= 3) return fromOrs
   }
-  // Evenly sample the drawn geometry so export always has shape points
   return simplifyWaypoints(coordinates, 8)
 }
 
-export async function createRoute(body: CreateRouteInput) {
-  const { lat, lng, durationMinutes, mode, bikeType } = assertInput(body)
-  const apiKey = process.env.ORS_API_KEY
-  if (!apiKey) {
-    throw new Error('ORS_API_KEY is not configured')
-  }
+function durationSecOf(feature: OrsFeature, fallback: number) {
+  return feature.properties?.summary?.duration ?? fallback
+}
 
-  const totalDistanceM = Math.round(speedFor(mode, bikeType) * durationMinutes * 60)
-  const profile = profileFor(mode, bikeType)
-  let seed = seedToInt(body.seed)
-
+async function createLoopRoute(
+  apiKey: string,
+  profile: string,
+  start: LatLng,
+  totalDistanceM: number,
+  seed: number,
+  durationMinutes: number,
+) {
   let best: OrsFeature | null = null
   let bestAspect = Infinity
   let lastError: Error | null = null
@@ -316,31 +385,28 @@ export async function createRoute(body: CreateRouteInput) {
         feature = await routeCircularLoop(
           apiKey,
           profile,
-          lat,
-          lng,
+          start.lat,
+          start.lng,
           totalDistanceM,
           attemptSeed,
         )
       } catch (err) {
-        // Sparse road grids sometimes can't hit every circle via — fall back to ORS round_trip
         feature = await routeOrsRoundTrip(
           apiKey,
           profile,
-          lat,
-          lng,
+          start.lat,
+          start.lng,
           totalDistanceM,
           attemptSeed,
         )
         lastError = err instanceof Error ? err : lastError
       }
 
-      const coords = feature.geometry!.coordinates!
-      const aspect = bboxAspect(coords)
+      const aspect = bboxAspect(feature.geometry!.coordinates!)
       if (aspect < bestAspect) {
         best = feature
         bestAspect = aspect
       }
-      // Good enough circle — stop early
       if (aspect <= 2.2) break
     } catch (err) {
       lastError = err instanceof Error ? err : new Error('Routing failed')
@@ -351,23 +417,125 @@ export async function createRoute(body: CreateRouteInput) {
     throw lastError ?? new Error('Routing failed')
   }
 
-  const coordinates = best.geometry.coordinates
-  const distanceMeters = best.properties?.summary?.distance ?? totalDistanceM
-  const durationSec = best.properties?.summary?.duration ?? durationMinutes * 60
-  const waypoints = pickWaypoints(best, coordinates)
-  const start = { lat, lng }
+  return {
+    feature: best,
+    kind: 'loop' as const,
+    note: null as string | null,
+    durationFallback: durationMinutes * 60,
+    distanceFallback: totalDistanceM,
+  }
+}
+
+async function createToRoute(
+  apiKey: string,
+  profile: string,
+  start: LatLng,
+  end: LatLng,
+  targetDistanceM: number,
+  seed: number,
+  durationMinutes: number,
+) {
+  const direct = await routeDirect(apiKey, profile, start, end)
+  const directSec = durationSecOf(direct, 0)
+  const directM = direct.properties?.summary?.distance ?? haversineM(start, end)
+  const targetSec = durationMinutes * 60
+
+  // Already as long as (or longer than) requested — use shortest path
+  if (directSec >= targetSec * 0.92) {
+    return {
+      feature: direct,
+      kind: 'to' as const,
+      note:
+        directSec > targetSec * 1.15
+          ? `Kortaste vägen tar redan ca ${Math.round(directSec / 60)} min`
+          : null,
+      durationFallback: directSec || targetSec,
+      distanceFallback: directM,
+    }
+  }
+
+  // Inflate with detours; pick closest to target duration
+  let best = direct
+  let bestDiff = Math.abs(directSec - targetSec)
+  const scales = [0.7, 1, 1.35, 1.8]
+
+  for (let attempt = 0; attempt < scales.length; attempt++) {
+    try {
+      const feature = await routeDetour(
+        apiKey,
+        profile,
+        start,
+        end,
+        targetDistanceM,
+        seed + attempt * 31,
+        scales[attempt]!,
+      )
+      const sec = durationSecOf(feature, targetSec)
+      const diff = Math.abs(sec - targetSec)
+      if (diff < bestDiff) {
+        best = feature
+        bestDiff = diff
+      }
+      if (diff / targetSec <= 0.12) break
+    } catch {
+      // try next scale
+    }
+  }
+
+  return {
+    feature: best,
+    kind: 'to' as const,
+    note: null as string | null,
+    durationFallback: targetSec,
+    distanceFallback: targetDistanceM,
+  }
+}
+
+export async function createRoute(body: CreateRouteInput) {
+  const { start, end, durationMinutes, mode, bikeType } = assertInput(body)
+  const apiKey = process.env.ORS_API_KEY
+  if (!apiKey) {
+    throw new Error('ORS_API_KEY is not configured')
+  }
+
+  const totalDistanceM = Math.round(speedFor(mode, bikeType) * durationMinutes * 60)
+  const profile = profileFor(mode, bikeType)
+  const seed = seedToInt(body.seed)
+
+  const result = end
+    ? await createToRoute(
+        apiKey,
+        profile,
+        start,
+        end,
+        totalDistanceM,
+        seed,
+        durationMinutes,
+      )
+    : await createLoopRoute(apiKey, profile, start, totalDistanceM, seed, durationMinutes)
+
+  const coordinates = result.feature.geometry!.coordinates!
+  const distanceMeters =
+    result.feature.properties?.summary?.distance ?? result.distanceFallback
+  const durationSec = durationSecOf(result.feature, result.durationFallback)
+  const waypoints = pickWaypoints(result.feature, coordinates)
+  const dest = end ?? start
 
   return {
     id: `rt_${Date.now().toString(36)}`,
+    kind: result.kind,
     mode,
     bikeType: mode === 'bike' ? bikeType : undefined,
     durationMinutes: Math.round(durationSec / 60),
     distanceMeters: Math.round(distanceMeters),
+    note: result.note,
     geometry: { type: 'LineString' as const, coordinates },
     waypoints,
+    start,
+    end: dest,
     export: {
-      googleMapsUrl: googleMapsUrl(start, waypoints, mode),
-      appleMapsUrl: appleMapsUrl(start, waypoints, mode),
+      googleMapsUrl: googleMapsUrl(start, dest, waypoints, mode),
+      appleMapsUrl: appleMapsUrl(start, dest, waypoints, mode),
     },
   }
 }

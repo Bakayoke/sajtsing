@@ -3,33 +3,54 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 export type LatLng = { lat: number; lng: number }
+export type PickTarget = 'start' | 'end'
 
 type Props = {
   start: LatLng | null
-  onPick?: (point: LatLng) => void
+  end?: LatLng | null
+  pickTarget?: PickTarget
+  onPickStart?: (point: LatLng) => void
+  onPickEnd?: (point: LatLng) => void
   routeCoords?: [number, number][] | null
   interactive?: boolean
+  routeColor?: string
 }
 
-const pinIcon = L.divIcon({
-  className: 'start-pin',
-  html: '<span class="start-pin-dot"></span>',
+const startIcon = L.divIcon({
+  className: 'map-pin start-pin',
+  html: '<span class="map-pin-dot start-pin-dot"></span>',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+})
+
+const endIcon = L.divIcon({
+  className: 'map-pin end-pin',
+  html: '<span class="map-pin-dot end-pin-dot"></span>',
   iconSize: [22, 22],
   iconAnchor: [11, 11],
 })
 
 export default function StartMap({
   start,
-  onPick,
+  end = null,
+  pickTarget = 'start',
+  onPickStart,
+  onPickEnd,
   routeCoords,
   interactive = true,
+  routeColor = '#2a5c45',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
-  const markerRef = useRef<L.Marker | null>(null)
+  const startMarkerRef = useRef<L.Marker | null>(null)
+  const endMarkerRef = useRef<L.Marker | null>(null)
   const routeRef = useRef<L.Polyline | null>(null)
-  const onPickRef = useRef(onPick)
-  onPickRef.current = onPick
+  const pickTargetRef = useRef(pickTarget)
+  const onPickStartRef = useRef(onPickStart)
+  const onPickEndRef = useRef(onPickEnd)
+  pickTargetRef.current = pickTarget
+  onPickStartRef.current = onPickStart
+  onPickEndRef.current = onPickEnd
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -47,8 +68,9 @@ export default function StartMap({
     }).addTo(map)
 
     map.on('click', (e: L.LeafletMouseEvent) => {
-      if (!onPickRef.current) return
-      onPickRef.current({ lat: e.latlng.lat, lng: e.latlng.lng })
+      const point = { lat: e.latlng.lat, lng: e.latlng.lng }
+      if (pickTargetRef.current === 'end') onPickEndRef.current?.(point)
+      else onPickStartRef.current?.(point)
     })
 
     mapRef.current = map
@@ -56,7 +78,8 @@ export default function StartMap({
     return () => {
       map.remove()
       mapRef.current = null
-      markerRef.current = null
+      startMarkerRef.current = null
+      endMarkerRef.current = null
       routeRef.current = null
     }
   }, [])
@@ -67,37 +90,73 @@ export default function StartMap({
     map.off('click')
     if (!interactive) return
     map.on('click', (e: L.LeafletMouseEvent) => {
-      if (!onPickRef.current) return
-      onPickRef.current({ lat: e.latlng.lat, lng: e.latlng.lng })
+      const point = { lat: e.latlng.lat, lng: e.latlng.lng }
+      if (pickTargetRef.current === 'end') onPickEndRef.current?.(point)
+      else onPickStartRef.current?.(point)
     })
   }, [interactive])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !start) return
+    if (!map) return
 
-    if (!markerRef.current) {
-      markerRef.current = L.marker([start.lat, start.lng], {
-        icon: pinIcon,
+    if (!start) {
+      if (startMarkerRef.current) {
+        map.removeLayer(startMarkerRef.current)
+        startMarkerRef.current = null
+      }
+      return
+    }
+
+    if (!startMarkerRef.current) {
+      startMarkerRef.current = L.marker([start.lat, start.lng], {
+        icon: startIcon,
         draggable: interactive,
       }).addTo(map)
 
-      markerRef.current.on('dragend', () => {
-        const pos = markerRef.current?.getLatLng()
-        if (pos && onPickRef.current) {
-          onPickRef.current({ lat: pos.lat, lng: pos.lng })
-        }
+      startMarkerRef.current.on('dragend', () => {
+        const pos = startMarkerRef.current?.getLatLng()
+        if (pos) onPickStartRef.current?.({ lat: pos.lat, lng: pos.lng })
       })
-
-      map.setView([start.lat, start.lng], 14)
     } else {
-      markerRef.current.setLatLng([start.lat, start.lng])
-      if (markerRef.current.dragging) {
-        if (interactive) markerRef.current.dragging.enable()
-        else markerRef.current.dragging.disable()
+      startMarkerRef.current.setLatLng([start.lat, start.lng])
+      if (startMarkerRef.current.dragging) {
+        if (interactive) startMarkerRef.current.dragging.enable()
+        else startMarkerRef.current.dragging.disable()
       }
     }
   }, [start, interactive])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    if (!end) {
+      if (endMarkerRef.current) {
+        map.removeLayer(endMarkerRef.current)
+        endMarkerRef.current = null
+      }
+      return
+    }
+
+    if (!endMarkerRef.current) {
+      endMarkerRef.current = L.marker([end.lat, end.lng], {
+        icon: endIcon,
+        draggable: interactive,
+      }).addTo(map)
+
+      endMarkerRef.current.on('dragend', () => {
+        const pos = endMarkerRef.current?.getLatLng()
+        if (pos) onPickEndRef.current?.({ lat: pos.lat, lng: pos.lng })
+      })
+    } else {
+      endMarkerRef.current.setLatLng([end.lat, end.lng])
+      if (endMarkerRef.current.dragging) {
+        if (interactive) endMarkerRef.current.dragging.enable()
+        else endMarkerRef.current.dragging.disable()
+      }
+    }
+  }, [end, interactive])
 
   useEffect(() => {
     const map = mapRef.current
@@ -108,18 +167,27 @@ export default function StartMap({
       routeRef.current = null
     }
 
-    if (!routeCoords?.length) return
+    if (!routeCoords?.length) {
+      if (start && end) {
+        map.fitBounds(L.latLngBounds([start.lat, start.lng], [end.lat, end.lng]), {
+          padding: [40, 40],
+          maxZoom: 14,
+        })
+      } else if (start) {
+        map.setView([start.lat, start.lng], 14)
+      }
+      return
+    }
 
-    // GeoJSON is [lng, lat]
     const latLngs = routeCoords.map(([lng, lat]) => L.latLng(lat, lng))
     routeRef.current = L.polyline(latLngs, {
-      color: '#0f6b4c',
+      color: routeColor,
       weight: 4,
-      opacity: 0.85,
+      opacity: 0.88,
     }).addTo(map)
 
     map.fitBounds(routeRef.current.getBounds(), { padding: [28, 28] })
-  }, [routeCoords])
+  }, [routeCoords, routeColor, start, end])
 
   return <div ref={containerRef} className="start-map" role="presentation" />
 }

@@ -5,26 +5,48 @@ function midsFrom(waypoints: LatLng[]): LatLng[] {
   return waypoints.slice(1, -1).slice(0, 8)
 }
 
-/** Path-based loop URL — works when start === end (query waypoints often get dropped). */
-export function googleMapsLoopUrl(start: LatLng, waypoints: LatLng[], mode: Mode) {
+function modeCode(mode: Mode) {
+  return mode === 'drive' ? '0' : mode === 'bike' ? '1' : '2'
+}
+
+function dirflg(mode: Mode) {
+  return mode === 'drive' ? 'd' : mode === 'bike' ? 'c' : 'w'
+}
+
+/** Path-based URL — works for loops (end=start) and A→B. */
+export function googleMapsRouteUrl(
+  start: LatLng,
+  end: LatLng,
+  waypoints: LatLng[],
+  mode: Mode,
+) {
   const mids = midsFrom(waypoints)
-  const modeCode = mode === 'drive' ? '0' : mode === 'bike' ? '1' : '2'
   const stops = [
     `${start.lat},${start.lng}`,
     ...mids.map((p) => `${p.lat},${p.lng}`),
-    `${start.lat},${start.lng}`,
+    `${end.lat},${end.lng}`,
   ]
-  return `https://www.google.com/maps/dir/${stops.join('/')}/data=!4m2!4m1!3e${modeCode}`
+  return `https://www.google.com/maps/dir/${stops.join('/')}/data=!4m2!4m1!3e${modeCode(mode)}`
 }
 
-export function appleMapsLoopUrl(start: LatLng, waypoints: LatLng[], mode: Mode) {
-  const dirflg = mode === 'drive' ? 'd' : mode === 'bike' ? 'c' : 'w'
+export function appleMapsRouteUrl(
+  start: LatLng,
+  end: LatLng,
+  waypoints: LatLng[],
+  mode: Mode,
+) {
   const mids = midsFrom(waypoints)
   const saddr = `${start.lat},${start.lng}`
-  if (mids.length === 0) {
-    return `https://maps.apple.com/?saddr=${saddr}&daddr=${saddr}&dirflg=${dirflg}`
-  }
-  // Use +to: (no spaces) — spaces in href truncate the URL in browsers
-  const daddr = [...mids.map((p) => `${p.lat},${p.lng}`), saddr].join('+to:')
-  return `https://maps.apple.com/?saddr=${saddr}&daddr=${daddr}&dirflg=${dirflg}`
+  const daddr = [...mids.map((p) => `${p.lat},${p.lng}`), `${end.lat},${end.lng}`].join('+to:')
+  return `https://maps.apple.com/?saddr=${saddr}&daddr=${daddr}&dirflg=${dirflg(mode)}`
+}
+
+/** @deprecated use googleMapsRouteUrl */
+export function googleMapsLoopUrl(start: LatLng, waypoints: LatLng[], mode: Mode) {
+  return googleMapsRouteUrl(start, start, waypoints, mode)
+}
+
+/** @deprecated use appleMapsRouteUrl */
+export function appleMapsLoopUrl(start: LatLng, waypoints: LatLng[], mode: Mode) {
+  return appleMapsRouteUrl(start, start, waypoints, mode)
 }

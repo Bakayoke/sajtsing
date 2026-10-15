@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import StartMap, { type LatLng } from './StartMap'
-import { appleMapsLoopUrl, googleMapsLoopUrl } from './mapsExport'
+import StartMap, { type LatLng, type PickTarget } from './StartMap'
+import { appleMapsRouteUrl, googleMapsRouteUrl } from './mapsExport'
 
 type Mode = 'walk' | 'run' | 'bike' | 'drive'
 type BikeType = 'regular' | 'electric' | 'road'
+type TripKind = 'loop' | 'to'
 
 type RouteResponse = {
+  kind?: TripKind
   mode: Mode
   durationMinutes: number
   distanceMeters: number
   bikeType?: BikeType
+  note?: string | null
   waypoints: LatLng[]
+  start?: LatLng
+  end?: LatLng
   geometry: { type: 'LineString'; coordinates: [number, number][] }
   export: {
     googleMapsUrl: string
@@ -36,10 +41,13 @@ const TIME_PRESETS = [15, 30, 45, 60, 90]
 const apiBase = import.meta.env.VITE_API_URL ?? ''
 
 export default function App() {
+  const [tripKind, setTripKind] = useState<TripKind>('loop')
+  const [pickTarget, setPickTarget] = useState<PickTarget>('start')
   const [mode, setMode] = useState<Mode>('walk')
   const [bikeType, setBikeType] = useState<BikeType>('regular')
   const [minutes, setMinutes] = useState(45)
   const [start, setStart] = useState<LatLng | null>(null)
+  const [end, setEnd] = useState<LatLng | null>(null)
   const [locating, setLocating] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -73,9 +81,22 @@ export default function App() {
     useMyLocation()
   }, [useMyLocation])
 
+  useEffect(() => {
+    if (tripKind === 'loop') {
+      setPickTarget('start')
+    } else if (!end) {
+      setPickTarget('end')
+    }
+  }, [tripKind, end])
+
   async function createSlinga(regenerate = false) {
     if (!start) {
       setError('Välj en startpunkt på kartan först')
+      return
+    }
+    if (tripKind === 'to' && !end) {
+      setError('Välj ett mål på kartan')
+      setPickTarget('end')
       return
     }
     setLoading(true)
@@ -86,6 +107,7 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           start,
+          end: tripKind === 'to' ? end : undefined,
           durationMinutes: minutes,
           mode,
           bikeType: mode === 'bike' ? bikeType : undefined,
@@ -111,21 +133,24 @@ export default function App() {
 
   const exportLinks = useMemo(() => {
     if (!route || !start) return null
+    const dest = tripKind === 'to' && end ? end : (route.end ?? start)
     const waypoints =
-      route.waypoints?.length >= 3
+      route.waypoints?.length >= 2
         ? route.waypoints
         : [
             start,
             ...route.geometry.coordinates
               .filter((_, i, arr) => i > 0 && i < arr.length - 1 && i % Math.ceil(arr.length / 8) === 0)
               .map(([lng, lat]) => ({ lat, lng })),
-            start,
+            dest,
           ]
     return {
-      google: googleMapsLoopUrl(start, waypoints, route.mode ?? mode),
-      apple: appleMapsLoopUrl(start, waypoints, route.mode ?? mode),
+      google: googleMapsRouteUrl(start, dest, waypoints, route.mode ?? mode),
+      apple: appleMapsRouteUrl(start, dest, waypoints, route.mode ?? mode),
     }
-  }, [route, start, mode])
+  }, [route, start, end, mode, tripKind])
+
+  const canCreate = Boolean(start && (tripKind === 'loop' || end))
 
   return (
     <main className="app">
@@ -136,20 +161,80 @@ export default function App() {
 
       {!route ? (
         <section className="panel">
+          <div className="field">
+            <span className="field-label">Läge</span>
+            <div className="modes trip-kinds">
+              <button
+                type="button"
+                className={tripKind === 'loop' ? 'active' : ''}
+                onClick={() => setTripKind('loop')}
+              >
+                Runda
+              </button>
+              <button
+                type="button"
+                className={tripKind === 'to' ? 'active' : ''}
+                onClick={() => setTripKind('to')}
+              >
+                Dit
+              </button>
+            </div>
+            <p className="hint">
+              {tripKind === 'loop'
+                ? 'En loop som tar ungefär den tid du väljer.'
+                : 'Från start till mål — men med en omväg som fyller tiden.'}
+            </p>
+          </div>
+
           <div className="start-block">
             <div className="field-label">
-              <span>Startpunkt</span>
+              <span>Karta</span>
               <button type="button" className="linkish" onClick={useMyLocation} disabled={locating}>
                 {locating ? 'Hämtar…' : 'Min plats'}
               </button>
             </div>
+
+            {tripKind === 'to' && (
+              <div className="modes pick-targets">
+                <button
+                  type="button"
+                  className={pickTarget === 'start' ? 'active' : ''}
+                  onClick={() => setPickTarget('start')}
+                >
+                  Start
+                </button>
+                <button
+                  type="button"
+                  className={pickTarget === 'end' ? 'active' : ''}
+                  onClick={() => setPickTarget('end')}
+                >
+                  Mål
+                </button>
+              </div>
+            )}
+
             <div className="map-shell">
-              <StartMap start={start} onPick={setStart} />
+              <StartMap
+                start={start}
+                end={tripKind === 'to' ? end : null}
+                pickTarget={pickTarget}
+                onPickStart={setStart}
+                onPickEnd={(p) => {
+                  setEnd(p)
+                  setPickTarget('end')
+                }}
+              />
             </div>
             <p className="hint">
-              {start
-                ? 'Dra pinnen eller tryck på kartan för att byta start.'
-                : 'Tryck på kartan för att välja start, eller tillåt plats.'}
+              {tripKind === 'loop'
+                ? start
+                  ? 'Dra pinnen eller tryck på kartan för att byta start.'
+                  : 'Tryck på kartan för att välja start, eller tillåt plats.'
+                : pickTarget === 'start'
+                  ? 'Sätt start (grön). Byt till Mål för att välja destination.'
+                  : end
+                    ? 'Dra eller tryck för att flytta målet (orange).'
+                    : 'Tryck på kartan för att sätta mål (orange).'}
             </p>
           </div>
 
@@ -210,7 +295,7 @@ export default function App() {
           <button
             type="button"
             className="primary"
-            disabled={loading || !start}
+            disabled={loading || !canCreate}
             onClick={() => createSlinga(false)}
           >
             {loading ? 'Ritar din sajtsing…' : 'Skapa sajtsing'}
@@ -221,8 +306,10 @@ export default function App() {
           <div className="map-shell">
             <StartMap
               start={start}
+              end={route.kind === 'to' || tripKind === 'to' ? end ?? route.end : null}
               routeCoords={route.geometry.coordinates}
               interactive={false}
+              routeColor="#2a5c45"
             />
           </div>
 
@@ -238,9 +325,12 @@ export default function App() {
           </div>
 
           <p className="result-note">
-            Runda tillbaka till start
+            {route.kind === 'to' || tripKind === 'to'
+              ? 'Start → mål med omväg'
+              : 'Runda tillbaka till start'}
             {bikeLabel ? ` · ${bikeLabel}` : ''}
           </p>
+          {route.note && <p className="hint accent-hint">{route.note}</p>}
 
           <div className="actions">
             <a

@@ -1,16 +1,18 @@
 :root {
   color-scheme: light;
-  --bg-deep: #1a3d2e;
-  --bg-mid: #2d5a45;
-  --bg-soft: #e7efe6;
-  --bg-wash: #f3f7f1;
-  --ink: #14261c;
-  --ink-soft: #3d5648;
-  --muted: #5a7264;
-  --line: rgba(20, 38, 28, 0.12);
-  --accent: #1f6b4a;
-  --accent-deep: #164f37;
-  --accent-ink: #f5faf7;
+  --bg-deep: #243528;
+  --bg-soft: #f0ebe3;
+  --bg-wash: #f7f3ec;
+  --ink: #1c241c;
+  --ink-soft: #4a5548;
+  --muted: #6a7366;
+  --line: rgba(36, 53, 40, 0.12);
+  --accent: #2a5c45;
+  --accent-deep: #1e4534;
+  --accent-ink: #f8f6f1;
+  --secondary: #e08a3c;
+  --secondary-deep: #c46f28;
+  --secondary-soft: rgba(224, 138, 60, 0.16);
   --surface: rgba(255, 255, 255, 0.78);
   --surface-solid: #ffffff;
   --danger: #9b2c2c;
@@ -37,10 +39,10 @@ body {
   color: var(--ink);
   background-color: var(--bg-wash);
   background-image:
-    radial-gradient(ellipse 90% 60% at 0% -10%, rgba(61, 120, 90, 0.28), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 0%, rgba(180, 160, 90, 0.18), transparent 50%),
-    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(45, 90, 69, 0.12), transparent 55%),
-    linear-gradient(180deg, var(--bg-soft) 0%, var(--bg-wash) 45%, #eef3ea 100%);
+    radial-gradient(ellipse 90% 55% at 0% -10%, rgba(224, 138, 60, 0.2), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 5%, rgba(42, 92, 69, 0.16), transparent 50%),
+    radial-gradient(ellipse 55% 40% at 40% 100%, rgba(196, 111, 40, 0.08), transparent 55%),
+    linear-gradient(180deg, var(--bg-soft) 0%, var(--bg-wash) 50%, #efe9df 100%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
 }
@@ -50,7 +52,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: 0.35;
+  opacity: 0.28;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
   mix-blend-mode: multiply;
   z-index: 0;
@@ -71,17 +73,28 @@ body::before {
 
 .brand {
   font-family: var(--font-display);
-  font-size: clamp(2.75rem, 12vw, 3.6rem);
+  font-size: clamp(2.4rem, 11vw, 3.2rem);
   font-weight: 700;
   font-optical-sizing: auto;
-  letter-spacing: -0.035em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   margin: 0;
-  line-height: 0.95;
+  line-height: 1;
   color: var(--bg-deep);
 }
 
+.brand::after {
+  content: "";
+  display: block;
+  width: 2.4rem;
+  height: 3px;
+  margin-top: 0.55rem;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--secondary), transparent);
+}
+
 .tagline {
-  margin: 0.55rem 0 0;
+  margin: 0.7rem 0 0;
   color: var(--ink-soft);
   font-size: 1.05rem;
   font-weight: 500;
@@ -124,25 +137,6 @@ label.field-label,
   color: var(--muted);
 }
 
-input[type='number'] {
-  font: inherit;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--ink);
-  padding: 0.75rem 0.9rem;
-  border-radius: 0.7rem;
-  border: 1px solid var(--line);
-  background: var(--surface-solid);
-  width: 100%;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-input[type='number']:focus {
-  outline: none;
-  border-color: rgba(31, 107, 74, 0.55);
-  box-shadow: 0 0 0 3px rgba(31, 107, 74, 0.12);
-}
-
 .time-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -151,9 +145,9 @@ input[type='number']:focus {
 
 .time-row button {
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 650;
-  padding: 0.55rem 0.15rem;
+  padding: 0.55rem 0.1rem;
   border-radius: 0.55rem;
   border: 1px solid var(--line);
   background: var(--surface-solid);
@@ -163,13 +157,13 @@ input[type='number']:focus {
 }
 
 .time-row button.active {
-  background: var(--bg-deep);
-  border-color: var(--bg-deep);
-  color: var(--accent-ink);
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #fffaf4;
 }
 
 .time-row button:hover:not(.active) {
-  border-color: rgba(20, 38, 28, 0.28);
+  border-color: rgba(196, 111, 40, 0.35);
 }
 
 .modes {
@@ -178,8 +172,14 @@ input[type='number']:focus {
   gap: 0.3rem;
   padding: 0.25rem;
   border-radius: 0.8rem;
-  background: rgba(20, 38, 28, 0.05);
+  background: rgba(36, 53, 40, 0.05);
   border: 1px solid var(--line);
+}
+
+.modes.bike-types,
+.modes.trip-kinds,
+.modes.pick-targets {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .modes.bike-types {
@@ -202,7 +202,19 @@ input[type='number']:focus {
 .modes button.active {
   background: var(--surface-solid);
   color: var(--bg-deep);
-  box-shadow: 0 1px 2px rgba(20, 38, 28, 0.08);
+  box-shadow: 0 1px 2px rgba(36, 53, 40, 0.08);
+}
+
+.modes.trip-kinds button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: none;
+}
+
+.modes.pick-targets button.active {
+  background: var(--secondary-soft);
+  color: var(--secondary-deep);
+  box-shadow: none;
 }
 
 .modes button:hover:not(.active) {
@@ -249,7 +261,7 @@ input[type='number']:focus {
 }
 
 .secondary:hover:not(:disabled) {
-  border-color: rgba(20, 38, 28, 0.28);
+  border-color: rgba(224, 138, 60, 0.4);
 }
 
 .secondary:disabled {
@@ -279,7 +291,7 @@ input[type='number']:focus {
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--accent);
+  color: var(--secondary-deep);
   background: none;
   border: none;
   padding: 0;
@@ -299,8 +311,8 @@ input[type='number']:focus {
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--line);
-  background: #c5d5c9;
-  box-shadow: 0 10px 28px rgba(20, 38, 28, 0.08);
+  background: #d5d2c8;
+  box-shadow: 0 10px 28px rgba(36, 53, 40, 0.08);
 }
 
 .map-shell::after {
@@ -329,6 +341,11 @@ input[type='number']:focus {
   font-weight: 500;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.accent-hint {
+  color: var(--secondary-deep);
+  font-weight: 600;
 }
 
 .result-stats {
@@ -369,20 +386,27 @@ input[type='number']:focus {
   color: var(--ink-soft);
 }
 
-.start-pin {
+.map-pin {
   background: transparent;
   border: none;
 }
 
-.start-pin-dot {
+.map-pin-dot {
   display: block;
   width: 16px;
   height: 16px;
   margin: 3px;
   border-radius: 50%;
-  background: var(--accent);
   border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(26, 46, 34, 0.35);
+  box-shadow: 0 1px 4px rgba(28, 36, 28, 0.35);
+}
+
+.start-pin-dot {
+  background: var(--accent);
+}
+
+.end-pin-dot {
+  background: var(--secondary);
 }
 
 .leaflet-control-attribution {
