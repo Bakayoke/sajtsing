@@ -183,8 +183,8 @@ export default function App() {
             </div>
             <p className="hint">
               {tripKind === 'loop'
-                ? 'En loop som tar ungefär den tid du väljer.'
-                : 'Från start till mål — men med en omväg som fyller tiden.'}
+                ? 'En runda att sajtsa — ungefär den tid du väljer.'
+                : 'Från start till mål, med en omväg så du får sajtsa hela tiden.'}
             </p>
           </div>
 
@@ -233,7 +233,7 @@ export default function App() {
                   ? 'Dra pinnen eller tryck på kartan för att byta start.'
                   : 'Tryck på kartan för att välja start, eller tillåt plats.'
                 : pickTarget === 'start'
-                  ? 'Sätt start (grön). Byt till Mål för att välja destination.'
+                  ? 'Sätt start. Byt till Mål för att välja destination.'
                   : end
                     ? 'Dra eller tryck för att flytta målet (orange).'
                     : 'Tryck på kartan för att sätta mål (orange).'}
@@ -300,7 +300,7 @@ export default function App() {
             disabled={loading || !canCreate}
             onClick={() => createSlinga(false)}
           >
-            {loading ? 'Ritar din sajtsing…' : 'Skapa sajtsing'}
+            {loading ? 'Ritar din runda…' : 'Sajtsa'}
           </button>
         </section>
       ) : (
@@ -328,8 +328,8 @@ export default function App() {
 
           <p className="result-note">
             {route.kind === 'to' || tripKind === 'to'
-              ? 'Start → mål med omväg'
-              : 'Runda tillbaka till start'}
+              ? 'Sajtsar dit · med omväg'
+              : 'Sajtsar runt · tillbaka till start'}
             {bikeLabel ? ` · ${bikeLabel}` : ''}
           </p>
           {route.note && <p className="hint accent-hint">{route.note}</p>}
@@ -357,7 +357,7 @@ export default function App() {
               disabled={loading}
               onClick={() => createSlinga(true)}
             >
-              Ny sajtsing
+              Ny runda
             </button>
             <button type="button" className="secondary" onClick={() => setRoute(null)}>
               Ändra tid / start
@@ -366,6 +366,17 @@ export default function App() {
           {error && <p className="error">{error}</p>}
         </section>
       )}
+
+      <p className="map-credit">
+        Karta ©{' '}
+        <a href="https://openfreemap.org" target="_blank" rel="noreferrer">
+          OpenFreeMap
+        </a>
+        {' · '}
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+          OpenStreetMap
+        </a>
+      </p>
     </main>
   )
 }

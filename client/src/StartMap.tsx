@@ -132,7 +132,8 @@ export default function StartMap({
       style: styleUrl(),
       center: [18.07, 59.33],
       zoom: 12.5,
-      attributionControl: { compact: true },
+      // Attribution shown in app footer instead (keeps map chrome clean)
+      attributionControl: false,
     })
 
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right')

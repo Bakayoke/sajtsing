@@ -506,6 +506,21 @@ body::after {
   color: var(--ink-soft);
 }
 
+.map-credit {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.map-credit a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
 .map-pin {
   background: transparent;
   border: none;
