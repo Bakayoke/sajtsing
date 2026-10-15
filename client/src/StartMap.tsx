@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import {
+  Map,
+  Marker,
+  NavigationControl,
+  LngLatBounds,
+  setWorkerUrl,
+  type GeoJSONSource,
+} from 'maplibre-gl'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
+import 'maplibre-gl/dist/maplibre-gl.css'
+
+setWorkerUrl(workerUrl)
 
 export type LatLng = { lat: number; lng: number }
 export type PickTarget = 'start' | 'end'
@@ -16,19 +26,50 @@ type Props = {
   routeColor?: string
 }
 
-const startIcon = L.divIcon({
-  className: 'map-pin start-pin',
-  html: '<span class="map-pin-dot start-pin-dot"></span>',
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-})
+const STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/liberty'
+const STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark'
 
-const endIcon = L.divIcon({
-  className: 'map-pin end-pin',
-  html: '<span class="map-pin-dot end-pin-dot"></span>',
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-})
+function prefersDark() {
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+}
+
+function styleUrl() {
+  return prefersDark() ? STYLE_DARK : STYLE_LIGHT
+}
+
+function makePinElement(kind: 'start' | 'end') {
+  const wrap = document.createElement('div')
+  wrap.className = `map-pin ${kind}-pin`
+  wrap.innerHTML = `<span class="map-pin-dot ${kind}-pin-dot"></span>`
+  return wrap
+}
+
+function ensureRouteLayer(map: Map, color: string) {
+  if (!map.getSource('route')) {
+    map.addSource('route', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+  }
+  if (!map.getLayer('route-line')) {
+    map.addLayer({
+      id: 'route-line',
+      type: 'line',
+      source: 'route',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': color,
+        'line-width': 4.5,
+        'line-opacity': 0.92,
+      },
+    })
+  } else {
+    map.setPaintProperty('route-line', 'line-color', color)
+  }
+}
 
 export default function StartMap({
   start,
@@ -41,154 +82,171 @@ export default function StartMap({
   routeColor = '#ff5a1f',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<L.Map | null>(null)
-  const startMarkerRef = useRef<L.Marker | null>(null)
-  const endMarkerRef = useRef<L.Marker | null>(null)
-  const routeRef = useRef<L.Polyline | null>(null)
+  const mapRef = useRef<Map | null>(null)
+  const startMarkerRef = useRef<Marker | null>(null)
+  const endMarkerRef = useRef<Marker | null>(null)
+  const styleReadyRef = useRef(false)
   const pickTargetRef = useRef(pickTarget)
   const onPickStartRef = useRef(onPickStart)
   const onPickEndRef = useRef(onPickEnd)
+  const interactiveRef = useRef(interactive)
+  const routeColorRef = useRef(routeColor)
+  const routeCoordsRef = useRef(routeCoords)
   pickTargetRef.current = pickTarget
   onPickStartRef.current = onPickStart
   onPickEndRef.current = onPickEnd
+  interactiveRef.current = interactive
+  routeColorRef.current = routeColor
+  routeCoordsRef.current = routeCoords
+
+  const paintRoute = () => {
+    const map = mapRef.current
+    if (!map || !styleReadyRef.current) return
+    ensureRouteLayer(map, routeColorRef.current)
+    const source = map.getSource('route') as GeoJSONSource | undefined
+    const coords = routeCoordsRef.current
+    if (!source) return
+
+    if (!coords?.length) {
+      source.setData({ type: 'FeatureCollection', features: [] })
+      return
+    }
+
+    source.setData({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: coords },
+    })
+
+    const bounds = new LngLatBounds()
+    for (const [lng, lat] of coords) bounds.extend([lng, lat])
+    map.fitBounds(bounds, { padding: 36, maxZoom: 15, duration: 500 })
+  }
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
-    const map = L.map(containerRef.current, {
-      zoomControl: false,
-      attributionControl: true,
-    }).setView([59.33, 18.07], 13)
+    const map = new Map({
+      container: containerRef.current,
+      style: styleUrl(),
+      center: [18.07, 59.33],
+      zoom: 12.5,
+      attributionControl: { compact: true },
+    })
 
-    L.control.zoom({ position: 'topright' }).addTo(map)
+    map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
 
-    // Free OSM tiles — no API key. Dark look is handled via CSS filter.
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap',
-      maxZoom: 19,
-    }).addTo(map)
+    map.on('load', () => {
+      styleReadyRef.current = true
+      paintRoute()
+    })
 
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      const point = { lat: e.latlng.lat, lng: e.latlng.lng }
+    map.on('click', (e) => {
+      if (!interactiveRef.current) return
+      const point = { lat: e.lngLat.lat, lng: e.lngLat.lng }
       if (pickTargetRef.current === 'end') onPickEndRef.current?.(point)
       else onPickStartRef.current?.(point)
     })
 
     mapRef.current = map
 
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onTheme = () => {
+      styleReadyRef.current = false
+      map.setStyle(styleUrl())
+      map.once('style.load', () => {
+        styleReadyRef.current = true
+        paintRoute()
+      })
+    }
+    mq.addEventListener('change', onTheme)
+
     return () => {
-      map.remove()
-      mapRef.current = null
+      mq.removeEventListener('change', onTheme)
+      startMarkerRef.current?.remove()
+      endMarkerRef.current?.remove()
       startMarkerRef.current = null
       endMarkerRef.current = null
-      routeRef.current = null
+      map.remove()
+      mapRef.current = null
+      styleReadyRef.current = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-    map.off('click')
-    if (!interactive) return
-    map.on('click', (e: L.LeafletMouseEvent) => {
-      const point = { lat: e.latlng.lat, lng: e.latlng.lng }
-      if (pickTargetRef.current === 'end') onPickEndRef.current?.(point)
-      else onPickStartRef.current?.(point)
-    })
-  }, [interactive])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     if (!start) {
-      if (startMarkerRef.current) {
-        map.removeLayer(startMarkerRef.current)
-        startMarkerRef.current = null
-      }
+      startMarkerRef.current?.remove()
+      startMarkerRef.current = null
       return
     }
 
     if (!startMarkerRef.current) {
-      startMarkerRef.current = L.marker([start.lat, start.lng], {
-        icon: startIcon,
+      const marker = new Marker({
+        element: makePinElement('start'),
         draggable: interactive,
-      }).addTo(map)
-
-      startMarkerRef.current.on('dragend', () => {
-        const pos = startMarkerRef.current?.getLatLng()
-        if (pos) onPickStartRef.current?.({ lat: pos.lat, lng: pos.lng })
+        anchor: 'center',
       })
-    } else {
-      startMarkerRef.current.setLatLng([start.lat, start.lng])
-      if (startMarkerRef.current.dragging) {
-        if (interactive) startMarkerRef.current.dragging.enable()
-        else startMarkerRef.current.dragging.disable()
+        .setLngLat([start.lng, start.lat])
+        .addTo(map)
+
+      marker.on('dragend', () => {
+        const ll = marker.getLngLat()
+        onPickStartRef.current?.({ lat: ll.lat, lng: ll.lng })
+      })
+      startMarkerRef.current = marker
+
+      if (!routeCoordsRef.current?.length && !end) {
+        map.easeTo({ center: [start.lng, start.lat], zoom: 13.5, duration: 400 })
       }
+    } else {
+      startMarkerRef.current.setLngLat([start.lng, start.lat])
+      startMarkerRef.current.setDraggable(interactive)
     }
-  }, [start, interactive])
+  }, [start, interactive, end])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     if (!end) {
-      if (endMarkerRef.current) {
-        map.removeLayer(endMarkerRef.current)
-        endMarkerRef.current = null
-      }
+      endMarkerRef.current?.remove()
+      endMarkerRef.current = null
       return
     }
 
     if (!endMarkerRef.current) {
-      endMarkerRef.current = L.marker([end.lat, end.lng], {
-        icon: endIcon,
+      const marker = new Marker({
+        element: makePinElement('end'),
         draggable: interactive,
-      }).addTo(map)
-
-      endMarkerRef.current.on('dragend', () => {
-        const pos = endMarkerRef.current?.getLatLng()
-        if (pos) onPickEndRef.current?.({ lat: pos.lat, lng: pos.lng })
+        anchor: 'center',
       })
+        .setLngLat([end.lng, end.lat])
+        .addTo(map)
+
+      marker.on('dragend', () => {
+        const ll = marker.getLngLat()
+        onPickEndRef.current?.({ lat: ll.lat, lng: ll.lng })
+      })
+      endMarkerRef.current = marker
     } else {
-      endMarkerRef.current.setLatLng([end.lat, end.lng])
-      if (endMarkerRef.current.dragging) {
-        if (interactive) endMarkerRef.current.dragging.enable()
-        else endMarkerRef.current.dragging.disable()
-      }
+      endMarkerRef.current.setLngLat([end.lng, end.lat])
+      endMarkerRef.current.setDraggable(interactive)
     }
-  }, [end, interactive])
+
+    if (!routeCoordsRef.current?.length && start) {
+      const bounds = new LngLatBounds([start.lng, start.lat], [end.lng, end.lat])
+      map.fitBounds(bounds, { padding: 48, maxZoom: 14, duration: 400 })
+    }
+  }, [end, interactive, start])
 
   useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
-    if (routeRef.current) {
-      map.removeLayer(routeRef.current)
-      routeRef.current = null
-    }
-
-    if (!routeCoords?.length) {
-      if (start && end) {
-        map.fitBounds(L.latLngBounds([start.lat, start.lng], [end.lat, end.lng]), {
-          padding: [40, 40],
-          maxZoom: 14,
-        })
-      } else if (start) {
-        map.setView([start.lat, start.lng], 14)
-      }
-      return
-    }
-
-    const latLngs = routeCoords.map(([lng, lat]) => L.latLng(lat, lng))
-    routeRef.current = L.polyline(latLngs, {
-      color: routeColor,
-      weight: 4,
-      opacity: 0.88,
-    }).addTo(map)
-
-    map.fitBounds(routeRef.current.getBounds(), { padding: [28, 28] })
-  }, [routeCoords, routeColor, start, end])
+    paintRoute()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeCoords, routeColor])
 
   return <div ref={containerRef} className="start-map" role="presentation" />
 }
