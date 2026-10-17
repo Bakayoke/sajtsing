@@ -36,8 +36,7 @@ const ORS_PROFILE: Record<Exclude<TravelMode, 'bike'>, string> = {
   drive: 'driving-car',
 }
 
-const CIRCLE_VIA_POINTS = 6
-const MAX_ROUTE_ATTEMPTS = 3
+const MAX_ROUTE_ATTEMPTS = 5
 
 type LatLng = { lat: number; lng: number }
 
@@ -136,30 +135,7 @@ function destinationPoint(lat: number, lng: number, distanceM: number, bearing: 
   }
 }
 
-function circularLoopCoordinates(
-  lat: number,
-  lng: number,
-  lengthM: number,
-  seed: number,
-  viaCount = CIRCLE_VIA_POINTS,
-): [number, number][] {
-  const radius = (lengthM * 0.8) / (2 * Math.PI)
-  const orient = ((seed % 360) * Math.PI) / 180
-  const center = destinationPoint(lat, lng, radius, orient + Math.PI)
-  const startAngle = orient
-  const totalPoints = viaCount + 1
-  const coords: [number, number][] = [[lng, lat]]
-
-  for (let i = 1; i < totalPoints; i++) {
-    const angle = startAngle + (2 * Math.PI * i) / totalPoints
-    const p = destinationPoint(center.lat, center.lng, radius, angle)
-    coords.push([p.lng, p.lat])
-  }
-  coords.push([lng, lat])
-  return coords
-}
-
-/** Scenic A→B: vias bulge off the direct line so road distance ≈ targetLengthM. */
+/** Softer A→B bulge — fewer vias, lower amplitude, avoid spike dead-ends. */
 function detourCoordinates(
   start: LatLng,
   end: LatLng,
@@ -171,13 +147,14 @@ function detourCoordinates(
   const bearing = bearingRad(start, end)
   const side = seed % 2 === 0 ? 1 : -1
   const perp = bearing + (Math.PI / 2) * side
-  const extra = Math.max(0, targetLengthM - direct * 1.2)
-  let amp = Math.min(extra * 0.42, direct * 0.9, targetLengthM * 0.28) * amplitudeScale
-  if (targetLengthM > direct * 1.15) {
-    amp = Math.max(amp, Math.min(direct * 0.25, 400))
+  const extra = Math.max(0, targetLengthM - direct * 1.25)
+  // Keep bulge moderate so ORS can route without out-and-back spikes
+  let amp = Math.min(extra * 0.28, direct * 0.55, 900) * amplitudeScale
+  if (targetLengthM > direct * 1.2) {
+    amp = Math.max(amp, Math.min(direct * 0.18, 350))
   }
 
-  const viaCount = amp > 600 ? 5 : 4
+  const viaCount = 3
   const coords: [number, number][] = [[start.lng, start.lat]]
   for (let i = 1; i <= viaCount; i++) {
     const t = i / (viaCount + 1)
@@ -207,19 +184,60 @@ function bboxAspect(coords: [number, number][]): number {
   return Math.max(width, height) / Math.min(width, height)
 }
 
-function simplifyWaypoints(
-  coords: [number, number][],
-  maxPoints = 8,
-): LatLng[] {
+/** Count sharp reversals (~U-turns) along a simplified sample of the path. */
+function countUTurns(coords: [number, number][]): number {
+  if (coords.length < 3) return 0
+  const step = Math.max(1, Math.floor(coords.length / 120))
+  let uturns = 0
+  for (let i = step; i < coords.length - step; i += step) {
+    const a = { lat: coords[i - step]![1], lng: coords[i - step]![0] }
+    const b = { lat: coords[i]![1], lng: coords[i]![0] }
+    const c = { lat: coords[i + step]![1], lng: coords[i + step]![0] }
+    if (haversineM(a, b) < 25 || haversineM(b, c) < 25) continue
+    const b1 = bearingRad(a, b)
+    const b2 = bearingRad(b, c)
+    let turn = Math.abs(b2 - b1)
+    if (turn > Math.PI) turn = 2 * Math.PI - turn
+    if (turn > (145 * Math.PI) / 180) uturns++
+  }
+  return uturns
+}
+
+/**
+ * Sample evenly by distance along the drawn geometry.
+ * Avoids ORS via-indices that often sit at dead-ends (go there → turn around).
+ */
+function sampleAlongRoute(coords: [number, number][], samples = 7): LatLng[] {
   if (coords.length === 0) return []
-  if (coords.length <= maxPoints) {
+  if (coords.length <= samples) {
     return coords.map(([lng, lat]) => ({ lat, lng }))
   }
-  const step = (coords.length - 1) / (maxPoints - 1)
+
+  const seg: number[] = [0]
+  for (let i = 1; i < coords.length; i++) {
+    const a = { lat: coords[i - 1]![1], lng: coords[i - 1]![0] }
+    const b = { lat: coords[i]![1], lng: coords[i]![0] }
+    seg.push(seg[i - 1]! + haversineM(a, b))
+  }
+  const total = seg[seg.length - 1]!
+  if (total < 1) return [{ lat: coords[0]![1], lng: coords[0]![0] }]
+
   const out: LatLng[] = []
-  for (let i = 0; i < maxPoints; i++) {
-    const [lng, lat] = coords[Math.round(i * step)]!
-    out.push({ lat, lng })
+  for (let s = 0; s < samples; s++) {
+    const target = (total * s) / (samples - 1)
+    let i = 1
+    while (i < seg.length && seg[i]! < target) i++
+    const i0 = Math.max(0, i - 1)
+    const i1 = Math.min(coords.length - 1, i)
+    const t0 = seg[i0]!
+    const t1 = seg[i1]!
+    const f = t1 > t0 ? (target - t0) / (t1 - t0) : 0
+    const [lng0, lat0] = coords[i0]!
+    const [lng1, lat1] = coords[i1]!
+    out.push({
+      lat: lat0 + (lat1 - lat0) * f,
+      lng: lng0 + (lng1 - lng0) * f,
+    })
   }
   return out
 }
@@ -284,20 +302,6 @@ async function orsDirections(
   return feature
 }
 
-async function routeCircularLoop(
-  apiKey: string,
-  profile: string,
-  lat: number,
-  lng: number,
-  lengthM: number,
-  seed: number,
-): Promise<OrsFeature> {
-  return orsDirections(apiKey, profile, {
-    coordinates: circularLoopCoordinates(lat, lng, lengthM, seed),
-    instructions: false,
-  })
-}
-
 async function routeOrsRoundTrip(
   apiKey: string,
   profile: string,
@@ -305,6 +309,7 @@ async function routeOrsRoundTrip(
   lng: number,
   lengthM: number,
   seed: number,
+  points: number,
 ): Promise<OrsFeature> {
   return orsDirections(apiKey, profile, {
     coordinates: [[lng, lat]],
@@ -312,7 +317,7 @@ async function routeOrsRoundTrip(
     options: {
       round_trip: {
         length: lengthM,
-        points: 9,
+        points,
         seed,
       },
     },
@@ -343,26 +348,46 @@ async function routeDetour(
   seed: number,
   amplitudeScale: number,
 ): Promise<OrsFeature> {
+  const coordinates = detourCoordinates(start, end, targetLengthM, seed, amplitudeScale)
+  // Limit snap distance so unreachable vias fail instead of 100km spikes
+  const radiuses = coordinates.map(() => 450)
   return orsDirections(apiKey, profile, {
-    coordinates: detourCoordinates(start, end, targetLengthM, seed, amplitudeScale),
+    coordinates,
+    radiuses,
     instructions: false,
+    continue_straight: true,
   })
-}
-
-function pickWaypoints(feature: OrsFeature, coordinates: [number, number][]): LatLng[] {
-  const wpIdx = feature.properties?.way_points
-  if (wpIdx && wpIdx.length >= 3) {
-    const fromOrs = wpIdx.map((i) => {
-      const [wLng, wLat] = coordinates[Math.min(i, coordinates.length - 1)]!
-      return { lat: wLat, lng: wLng }
-    })
-    if (fromOrs.length >= 3) return fromOrs
-  }
-  return simplifyWaypoints(coordinates, 8)
 }
 
 function durationSecOf(feature: OrsFeature, fallback: number) {
   return feature.properties?.summary?.duration ?? fallback
+}
+
+function distanceMOf(feature: OrsFeature, fallback: number) {
+  return feature.properties?.summary?.distance ?? fallback
+}
+
+/** Higher is better. Rejects absurdly long/short routes. */
+function scoreRoute(feature: OrsFeature, targetSec: number, preferRound = true): number {
+  const coords = feature.geometry?.coordinates
+  if (!coords?.length) return -Infinity
+
+  const dur = durationSecOf(feature, 0)
+  const dist = distanceMOf(feature, 0)
+  if (dur <= 0 || dist <= 0) return -Infinity
+
+  const ratio = dur / targetSec
+  // Hard reject wild outliers (the 30h / 170km bug class)
+  if (ratio > 2.2 || ratio < 0.4) return -Infinity
+  if (dist > speedFor('walk', 'regular') * targetSec * 3.5) return -Infinity
+
+  const durationScore = 1 - Math.min(1, Math.abs(dur - targetSec) / targetSec)
+  const uturns = countUTurns(coords)
+  const uturnPenalty = Math.min(0.6, uturns * 0.08)
+  const aspect = bboxAspect(coords)
+  const roundBonus = preferRound ? (aspect <= 2.4 ? 0.15 : aspect <= 3.2 ? 0.05 : -0.15) : 0
+
+  return durationScore + roundBonus - uturnPenalty
 }
 
 async function createLoopRoute(
@@ -373,55 +398,49 @@ async function createLoopRoute(
   seed: number,
   durationMinutes: number,
 ) {
+  const targetSec = durationMinutes * 60
   let best: OrsFeature | null = null
-  let bestAspect = Infinity
+  let bestScore = -Infinity
   let lastError: Error | null = null
 
-  for (let attempt = 0; attempt < MAX_ROUTE_ATTEMPTS; attempt++) {
-    const attemptSeed = seed + attempt * 47
-    try {
-      let feature: OrsFeature
-      try {
-        feature = await routeCircularLoop(
-          apiKey,
-          profile,
-          start.lat,
-          start.lng,
-          totalDistanceM,
-          attemptSeed,
-        )
-      } catch (err) {
-        feature = await routeOrsRoundTrip(
-          apiKey,
-          profile,
-          start.lat,
-          start.lng,
-          totalDistanceM,
-          attemptSeed,
-        )
-        lastError = err instanceof Error ? err : lastError
-      }
+  // Prefer native ORS round_trip — fewer spike/turnaround artifacts than custom vias
+  const pointOptions = [5, 6, 7, 4]
 
-      const aspect = bboxAspect(feature.geometry!.coordinates!)
-      if (aspect < bestAspect) {
+  for (let attempt = 0; attempt < MAX_ROUTE_ATTEMPTS; attempt++) {
+    const attemptSeed = seed + attempt * 53
+    const points = pointOptions[attempt % pointOptions.length]!
+    // Slight length nudge helps hit target time when ORS undershoots/overshoots
+    const lengthNudge = 1 + ((attempt % 3) - 1) * 0.08
+    try {
+      const feature = await routeOrsRoundTrip(
+        apiKey,
+        profile,
+        start.lat,
+        start.lng,
+        Math.round(totalDistanceM * lengthNudge),
+        attemptSeed,
+        points,
+      )
+      const score = scoreRoute(feature, targetSec, true)
+      if (score > bestScore) {
         best = feature
-        bestAspect = aspect
+        bestScore = score
       }
-      if (aspect <= 2.2) break
+      if (score >= 0.75) break
     } catch (err) {
       lastError = err instanceof Error ? err : new Error('Routing failed')
     }
   }
 
-  if (!best?.geometry?.coordinates?.length) {
-    throw lastError ?? new Error('Routing failed')
+  if (!best?.geometry?.coordinates?.length || bestScore === -Infinity) {
+    throw lastError ?? new Error('Kunde inte skapa en jämn runda — prova Ny runda')
   }
 
   return {
     feature: best,
     kind: 'loop' as const,
     note: null as string | null,
-    durationFallback: durationMinutes * 60,
+    durationFallback: targetSec,
     distanceFallback: totalDistanceM,
   }
 }
@@ -437,10 +456,9 @@ async function createToRoute(
 ) {
   const direct = await routeDirect(apiKey, profile, start, end)
   const directSec = durationSecOf(direct, 0)
-  const directM = direct.properties?.summary?.distance ?? haversineM(start, end)
+  const directM = distanceMOf(direct, haversineM(start, end))
   const targetSec = durationMinutes * 60
 
-  // Already as long as (or longer than) requested — use shortest path
   if (directSec >= targetSec * 0.92) {
     return {
       feature: direct,
@@ -454,10 +472,9 @@ async function createToRoute(
     }
   }
 
-  // Inflate with detours; pick closest to target duration
   let best = direct
-  let bestDiff = Math.abs(directSec - targetSec)
-  const scales = [0.7, 1, 1.35, 1.8]
+  let bestScore = scoreRoute(direct, targetSec, false)
+  const scales = [0.6, 0.9, 1.15, 1.4]
 
   for (let attempt = 0; attempt < scales.length; attempt++) {
     try {
@@ -470,15 +487,25 @@ async function createToRoute(
         seed + attempt * 31,
         scales[attempt]!,
       )
-      const sec = durationSecOf(feature, targetSec)
-      const diff = Math.abs(sec - targetSec)
-      if (diff < bestDiff) {
+      const score = scoreRoute(feature, targetSec, false)
+      if (score > bestScore) {
         best = feature
-        bestDiff = diff
+        bestScore = score
       }
-      if (diff / targetSec <= 0.12) break
+      if (score >= 0.7) break
     } catch {
       // try next scale
+    }
+  }
+
+  // If detours were all bad, fall back to direct rather than a spike route
+  if (bestScore === -Infinity) {
+    return {
+      feature: direct,
+      kind: 'to' as const,
+      note: `Kunde inte fylla tiden jämnt — kortaste vägen ca ${Math.round(directSec / 60)} min`,
+      durationFallback: directSec || targetSec,
+      distanceFallback: directM,
     }
   }
 
@@ -515,10 +542,10 @@ export async function createRoute(body: CreateRouteInput) {
     : await createLoopRoute(apiKey, profile, start, totalDistanceM, seed, durationMinutes)
 
   const coordinates = result.feature.geometry!.coordinates!
-  const distanceMeters =
-    result.feature.properties?.summary?.distance ?? result.distanceFallback
+  const distanceMeters = distanceMOf(result.feature, result.distanceFallback)
   const durationSec = durationSecOf(result.feature, result.durationFallback)
-  const waypoints = pickWaypoints(result.feature, coordinates)
+  // Even spacing along the actual path → smoother Maps export, fewer turnarounds
+  const waypoints = sampleAlongRoute(coordinates, 7)
   const dest = end ?? start
 
   return {
