@@ -506,8 +506,41 @@ body::after {
   color: var(--ink-soft);
 }
 
+.fika-tip {
+  margin: 1.35rem 0 0;
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 550;
+  color: var(--ink-soft);
+}
+
+.fika-tip-link {
+  color: var(--pop-deep);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.fika-tip-sep {
+  opacity: 0.5;
+}
+
+.fika-tip-copy {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
 .map-credit {
-  margin: 1.25rem 0 0;
+  margin: 0.65rem 0 0;
   text-align: center;
   font-size: 0.68rem;
   font-weight: 500;
