@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import StartMap, { type LatLng, type PickTarget } from './StartMap'
 import { appleMapsRouteUrl, googleMapsRouteUrl } from './mapsExport'
-import FikaTip from './FikaTip'
 
 type Mode = 'walk' | 'run' | 'bike' | 'drive'
 type BikeType = 'regular' | 'electric' | 'road'
@@ -367,8 +366,6 @@ export default function App() {
           {error && <p className="error">{error}</p>}
         </section>
       )}
-
-      <FikaTip />
 
       <p className="map-credit">
         Karta ©{' '}
